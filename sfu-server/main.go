@@ -12,6 +12,7 @@ import (
 )
 
 const (
+	// PLI (Pictire Loss Indication)
 	rtcpPLIInterval = time.Second * 3
 )
 
