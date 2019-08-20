@@ -1,6 +1,7 @@
 ### History for developement
 
 - 2018/08/20
+    - modify the web access part by Choong Hee Park
     - add FileServer(static) in signal/[http.go](internal/signal/http.go)
     - modify demo.html to include [demo.js](static/demo.js)
 ```
