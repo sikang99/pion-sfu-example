@@ -18,7 +18,7 @@ edit-history eh:
 	vi HISTORY.md
 #----------------------------------------------------------------------------------
 build b:
-	CGO_ENABLED=0 GO111MODULE=on GOOS=linux go build -o bin/$(SERVER) $(SERVER)/main.go
+	CGO_ENABLED=0 GO111MODULE=on go build -o bin/$(SERVER) $(SERVER)/main.go
 	@cp bin/* $(GOPATH)/bin
 	@ls -al $(GOPATH)/bin/sfu-server
 clean:
@@ -30,7 +30,7 @@ run r:
 run-client rc:
 	@echo "no action for $@"
 run-server rs:
-	$(SERVER)
+	bin/$(SERVER)
 #----------------------------------------------------------------------------------
 TAG=0.0.1
 NAME=teamgrit/pion-sfu
@@ -63,7 +63,7 @@ git g:
 	@echo "make (git:g) [update|store]"
 git-update gu:
 	git add .
-	git commit -a -m "start to test the sample sfu"
+	git commit -a -m "add H.266 support"
 	git push
 git-store gs:
 	git config credential.helper store
