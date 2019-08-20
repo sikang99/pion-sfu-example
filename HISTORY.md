@@ -1,7 +1,7 @@
 ### History for developement
 
 - 2018/08/20
-    - add FileServer(static) in signal/http.go
+    - add FileServer(static) in [signal/http.go](internal/signal/http.go)
     - modify demo.html to include [demo.js](static/demo.js)
 ```
 $ sfu-server -h
