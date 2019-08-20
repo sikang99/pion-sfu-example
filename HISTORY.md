@@ -2,7 +2,7 @@
 
 - 2018/08/20
     - add FileServer(static) in signal/http.go
-    - modify demo.html to include [demo.js](demo.js)
+    - modify demo.html to include [demo.js](static/demo.js)
 ```
 $ sfu-server -h
 Usage of sfu-server:
