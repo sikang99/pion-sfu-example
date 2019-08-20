@@ -37,6 +37,7 @@ func HTTPSDPServer() chan string {
 		sdpChan <- string(body)
 	})
 
+	// http server for static files
 	fs := http.FileServer(http.Dir(*dir))
 	http.Handle("/"+*dir+"/", http.StripPrefix("/"+*dir+"/", fs))
 
