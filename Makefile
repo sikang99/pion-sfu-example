@@ -6,10 +6,10 @@ SERVER=sfu-server
 #----------------------------------------------------------------------------------
 .PHONY: usage edit build clean docker compose git
 usage:
-	@echo "make [edit|build|run|docker|compose]"
+	@echo "usage: make [edit|build|run|docker|compose]"
 #----------------------------------------------------------------------------------
 edit e:
-	@echo "make (edit:e) [client|server|history]"
+	@echo "> make (edit:e) [client|server|history]"
 edit-client ec:
 	@echo "no action for $@"
 edit-server es:
@@ -26,7 +26,7 @@ clean:
 	docker system prune
 #----------------------------------------------------------------------------------
 run r:
-	@echo "make (run:r) [client|server]"
+	@echo "> make (run:r) [client|server]"
 run-client rc:
 	@echo "curl http://localhost:8080/sdp -d "
 run-server rs:
@@ -41,7 +41,7 @@ NAME=teamgrit/pion-sfu
 IMAGE=$(NAME):$(TAG)
 
 docker d:
-	@echo "make (docker:d) [build|run|push]"
+	@echo "> make (docker:d) [build|run|push]"
 docker-build db:
 	docker build -t $(IMAGE) . -f Dockerfile
 	docker images $(NAME)
@@ -54,7 +54,7 @@ docker-push dp:
 	docker push $(IMAGE)
 #----------------------------------------------------------------------------------
 compose c:
-	@echo "make (compose:c) [up|down|status]"
+	@echo "> make (compose:c) [up|down|status]"
 compose-up cu:
 	docker-compose up -d
 	docker-compose ps
@@ -64,10 +64,10 @@ compose-status cs:
 	docker-compose ps
 #----------------------------------------------------------------------------------
 git g:
-	@echo "make (git:g) [update|store]"
+	@echo "> make (git:g) [update|store]"
 git-update gu:
 	git add .
-	git commit -a -m "add FileServer support for static"
+	git commit -a -m "web connect without curl"
 	git push
 git-store gs:
 	git config credential.helper store
