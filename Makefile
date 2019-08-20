@@ -31,7 +31,7 @@ run-client rc:
 	@echo "curl http://localhost:8080/sdp -d "
 run-server rs:
 	$(SERVER) &
-run-web wr:
+run-web rw:
 	open http://localhost:8080/static
 kill k:
 	pkill $(SERVER)
