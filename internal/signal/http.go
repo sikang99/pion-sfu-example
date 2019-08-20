@@ -25,8 +25,8 @@ func getHost(r *http.Request) string {
 
 // HTTPSDPServer starts a HTTP Server that consumes SDPs
 func HTTPSDPServer() chan string {
-	port := flag.Int("port", 8080, "http server port")
-	dir := flag.String("dir", "static", "base directory")
+	port := flag.Int("port", 8080, "port of http server")
+	dir := flag.String("dir", "static", "base directory of file server")
 	flag.Parse()
 
 	sdpChan := make(chan string)
