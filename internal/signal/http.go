@@ -33,8 +33,10 @@ func HTTPSDPServer() chan string {
 	http.HandleFunc("/sdp", func(w http.ResponseWriter, r *http.Request) {
 		log.Printf("/sdp connected from %s", r.Host)
 		body, _ := ioutil.ReadAll(r.Body)
-		fmt.Fprintf(w, "sdp received")
+		// process request of sdp
 		sdpChan <- string(body)
+		// send response of sdp
+		fmt.Fprintf(w, <-sdpChan)
 	})
 
 	// http server for static files
@@ -48,7 +50,7 @@ func HTTPSDPServer() chan string {
 		}
 	}()
 
-	fmt.Println("\nPion SFU example server\n")
+	log.Println("\nPion SFU example server is started\n")
 	log.Printf("started http server on :%d", *port)
 	return sdpChan
 }

@@ -123,7 +123,10 @@ func main() {
 
 	log.Println("ANSWER\n", answer) // json format of SDP
 	// Get the LocalDescription and take it to base64 so we can paste in browser
-	log.Println(signal.Encode(answer))
+	baseAnswer := signal.Encode(answer)
+	log.Println(baseAnswer)
+
+	sdpChan <- baseAnswer
 
 	localTrack := <-localTrackChan
 	for {
