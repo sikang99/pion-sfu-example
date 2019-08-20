@@ -1,5 +1,7 @@
 ---
- name: sfu-minimal
+ name: sfu-server
  description: Example of a minimal SFU using Pion WebRTC
  authors:
    - Sean DuBois
+   - Stoney Kang, ehance the source
+   

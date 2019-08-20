@@ -63,7 +63,7 @@ git g:
 	@echo "make (git:g) [update|store]"
 git-update gu:
 	git add .
-	git commit -a -m "add H.266 support"
+	git commit -a -m "add FileServer support for static"
 	git push
 git-store gs:
 	git config credential.helper store
