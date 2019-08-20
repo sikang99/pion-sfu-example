@@ -20,7 +20,7 @@ func main() {
 	// default setting for logger
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
 
-	sdpChan := signal.HTTPSDPServer()
+	sdpInChan, sdpOutChan := signal.HTTPSDPServer()
 
 	// Everything below is the Pion WebRTC API, thanks for using it ❤️.
 	// Create a MediaEngine object to configure the supported codec
@@ -37,7 +37,7 @@ func main() {
 	api := webrtc.NewAPI(webrtc.WithMediaEngine(m))
 
 	offer := webrtc.SessionDescription{}
-	signal.Decode(<-sdpChan, &offer)
+	signal.Decode(<-sdpInChan, &offer)
 	log.Println("OFFER\n", offer) // json format
 
 	peerConnectionConfig := webrtc.Configuration{
@@ -124,16 +124,15 @@ func main() {
 	log.Println("ANSWER\n", answer) // json format of SDP
 	// Get the LocalDescription and take it to base64 so we can paste in browser
 	baseAnswer := signal.Encode(answer)
+	sdpOutChan <- baseAnswer
 	log.Println(baseAnswer)
-
-	sdpChan <- baseAnswer
 
 	localTrack := <-localTrackChan
 	for {
 		log.Println("Curl an base64 SDP to start sendonly peer connection")
 
 		recvOnlyOffer := webrtc.SessionDescription{}
-		signal.Decode(<-sdpChan, &recvOnlyOffer)
+		signal.Decode(<-sdpInChan, &recvOnlyOffer)
 		log.Println(recvOnlyOffer) // json format
 
 		// Create a new PeerConnection

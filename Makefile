@@ -30,7 +30,6 @@ run r:
 run-client rc:
 	@echo "curl http://localhost:8080/sdp -d "
 run-server rs:
-	pkill $(SERVER)
 	$(SERVER) &
 run-web rw:
 	open http://localhost:8080/static

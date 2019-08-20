@@ -41,7 +41,6 @@ window.createSession = async isPublisher => {
     log(err);
   }
   
-
   window.startSession = async () => {
     const sdp = document.getElementById('localSessionDescription').value
     const { data:response } = await axios.post('/sdp', sdp);

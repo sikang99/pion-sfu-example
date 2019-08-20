@@ -24,19 +24,21 @@ func getHost(r *http.Request) string {
 }
 
 // HTTPSDPServer starts a HTTP Server that consumes SDPs
-func HTTPSDPServer() chan string {
+func HTTPSDPServer() (chan string, chan string) {
 	port := flag.Int("port", 8080, "port of http server")
 	dir := flag.String("dir", "static", "base directory of file server")
 	flag.Parse()
 
-	sdpChan := make(chan string)
+	sdpInChan := make(chan string)
+	sdpOutChan := make(chan string)
+
 	http.HandleFunc("/sdp", func(w http.ResponseWriter, r *http.Request) {
 		log.Printf("/sdp connected from %s", r.Host)
 		body, _ := ioutil.ReadAll(r.Body)
 		// process request of sdp
-		sdpChan <- string(body)
+		sdpInChan <- string(body)
 		// send response of sdp
-		fmt.Fprintf(w, <-sdpChan)
+		fmt.Fprintf(w, <-sdpOutChan)
 	})
 
 	// http server for static files
@@ -52,5 +54,5 @@ func HTTPSDPServer() chan string {
 
 	log.Println("\nPion SFU example server is started\n")
 	log.Printf("started http server on :%d", *port)
-	return sdpChan
+	return sdpInChan, sdpOutChan
 }
