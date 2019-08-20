@@ -28,7 +28,7 @@ clean:
 run r:
 	@echo "make (run:r) [client|server]"
 run-client rc:
-	@echo "no action for $@"
+	open http://localhost:8080/static
 run-server rs:
 	bin/$(SERVER)
 #----------------------------------------------------------------------------------
