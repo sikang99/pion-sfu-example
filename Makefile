@@ -20,7 +20,7 @@ edit-history eh:
 build b:
 	CGO_ENABLED=0 GO111MODULE=on go build -o bin/$(SERVER) $(SERVER)/main.go
 	@cp bin/* $(GOPATH)/bin
-	@ls -al $(GOPATH)/bin/sfu-server
+	@ls -al $(GOPATH)/bin/$(SERVER)
 clean:
 	rm -f bin/*
 	docker system prune
@@ -31,6 +31,8 @@ run-client rc:
 	open http://localhost:8080/static
 run-server rs:
 	bin/$(SERVER)
+kill k:
+	pkill $(SERVER)
 #----------------------------------------------------------------------------------
 TAG=0.0.1
 NAME=teamgrit/pion-sfu
