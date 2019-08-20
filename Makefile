@@ -28,9 +28,11 @@ clean:
 run r:
 	@echo "make (run:r) [client|server]"
 run-client rc:
-	open http://localhost:8080/static
+	@echo "curl http://localhost:8080/sdp -d "
 run-server rs:
-	bin/$(SERVER)
+	$(SERVER) &
+run-web wr:
+	open http://localhost:8080/static
 kill k:
 	pkill $(SERVER)
 #----------------------------------------------------------------------------------

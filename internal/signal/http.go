@@ -31,9 +31,9 @@ func HTTPSDPServer() chan string {
 
 	sdpChan := make(chan string)
 	http.HandleFunc("/sdp", func(w http.ResponseWriter, r *http.Request) {
-		log.Printf("/sdp connectedi from %s", r.Host)
+		log.Printf("/sdp connected from %s", r.Host)
 		body, _ := ioutil.ReadAll(r.Body)
-		fmt.Fprintf(w, "done")
+		fmt.Fprintf(w, "sdp received")
 		sdpChan <- string(body)
 	})
 
@@ -48,5 +48,7 @@ func HTTPSDPServer() chan string {
 		}
 	}()
 
+	fmt.Println("\nPion SFU example server\n")
+	log.Printf("started http server on :%d", *port)
 	return sdpChan
 }

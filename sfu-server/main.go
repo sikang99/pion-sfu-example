@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"io"
+	"log"
 	"time"
 
 	"github.com/pion/rtcp"
@@ -17,6 +18,9 @@ const (
 )
 
 func main() {
+	// default setting for logger
+	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
+
 	sdpChan := signal.HTTPSDPServer()
 
 	// Everything below is the Pion WebRTC API, thanks for using it ❤️.
@@ -26,14 +30,16 @@ func main() {
 	// Setup the codecs you want to use.
 	// Only support VP8, this makes our proxying code simpler
 	m.RegisterCodec(webrtc.NewRTPVP8Codec(webrtc.DefaultPayloadTypeVP8, 90000))
-	//m.RegisterCodec(webrtc.NewRTPH264Codec(webrtc.DefaultPayloadTypeH264, 90000)) // added by sikang
+	log.Println("VP8 codec support")
+	m.RegisterCodec(webrtc.NewRTPH264Codec(webrtc.DefaultPayloadTypeH264, 90000)) // added by sikang
+	log.Println("H264 codec support")
 
 	// Create the API object with the MediaEngine
 	api := webrtc.NewAPI(webrtc.WithMediaEngine(m))
 
 	offer := webrtc.SessionDescription{}
 	signal.Decode(<-sdpChan, &offer)
-	fmt.Println("")
+	log.Println(offer) // json format
 
 	peerConnectionConfig := webrtc.Configuration{
 		ICEServers: []webrtc.ICEServer{
@@ -108,16 +114,17 @@ func main() {
 		panic(err)
 	}
 
+	log.Println(answer) // json formatß
 	// Get the LocalDescription and take it to base64 so we can paste in browser
-	fmt.Println(signal.Encode(answer))
+	log.Println(signal.Encode(answer))
 
 	localTrack := <-localTrackChan
 	for {
-		fmt.Println("")
-		fmt.Println("Curl an base64 SDP to start sendonly peer connection")
+		log.Println("Curl an base64 SDP to start sendonly peer connection")
 
 		recvOnlyOffer := webrtc.SessionDescription{}
 		signal.Decode(<-sdpChan, &recvOnlyOffer)
+		log.Println(recvOnlyOffer) // json format
 
 		// Create a new PeerConnection
 		peerConnection, err := api.NewPeerConnection(peerConnectionConfig)
