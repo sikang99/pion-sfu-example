@@ -9,17 +9,17 @@ import (
 	"strconv"
 )
 
-// PubHandler: Publish handler
+// PubHandler process publishers
 func PubHandler(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "PubHandler")
 }
 
-// SubHandler: Subscriber handler
+// SubHandler process subscribers
 func SubHandler(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "SubHandler")
 }
 
-// MonHandler: Monitor handler
+// MonHandler monitor the server
 func MonHandler(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "MonHandler")
 }
