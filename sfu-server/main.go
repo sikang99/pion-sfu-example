@@ -53,14 +53,12 @@ func main() {
 	// Create a new RTCPeerConnection
 	peerConnection, err := api.NewPeerConnection(peerConnectionConfig)
 	if err != nil {
-		log.Println(err)
-		panic(err)
+		log.Fatalln(err)
 	}
 
 	// Allow us to receive 1 video track
 	if _, err = peerConnection.AddTransceiver(webrtc.RTPCodecTypeVideo); err != nil {
-		log.Println(err)
-		panic(err)
+		log.Fatalln(err)
 	}
 
 	localTrackChan := make(chan *webrtc.Track)
@@ -81,8 +79,7 @@ func main() {
 		// Create a local track, all our SFU clients will be fed via this track
 		localTrack, newTrackErr := peerConnection.NewTrack(remoteTrack.PayloadType(), remoteTrack.SSRC(), "video", "pion")
 		if newTrackErr != nil {
-			log.Println(err)
-			panic(newTrackErr)
+			log.Fatalln(newTrackErr)
 		}
 		localTrackChan <- localTrack
 
@@ -90,14 +87,12 @@ func main() {
 		for {
 			i, readErr := remoteTrack.Read(rtpBuf)
 			if readErr != nil {
-				log.Println(err)
-				panic(readErr)
+				log.Fatalln(err)
 			}
 
 			// ErrClosedPipe means we don't have any subscribers, this is ok if no peers have connected yet
 			if _, err = localTrack.Write(rtpBuf[:i]); err != nil && err != io.ErrClosedPipe {
-				log.Println(err)
-				panic(err)
+				log.Fatalln(err)
 			}
 		}
 	})
@@ -105,22 +100,19 @@ func main() {
 	// Set the remote SessionDescription
 	err = peerConnection.SetRemoteDescription(offer)
 	if err != nil {
-		log.Println(err)
-		panic(err)
+		log.Fatalln(err)
 	}
 
 	// Create answer
 	answer, err := peerConnection.CreateAnswer(nil)
 	if err != nil {
-		log.Println(err)
-		panic(err)
+		log.Fatalln(err)
 	}
 
 	// Sets the LocalDescription, and starts our UDP listeners
 	err = peerConnection.SetLocalDescription(answer)
 	if err != nil {
-		log.Println(err)
-		panic(err)
+		log.Fatalln(err)
 	}
 
 	log.Println("ANSWER\n", answer) // json format of SDP
@@ -140,21 +132,18 @@ func main() {
 		// Create a new PeerConnection
 		peerConnection, err := api.NewPeerConnection(peerConnectionConfig)
 		if err != nil {
-			log.Println(err)
-			panic(err)
+			log.Fatalln(err)
 		}
 
 		_, err = peerConnection.AddTrack(localTrack)
 		if err != nil {
-			log.Println(err)
-			panic(err)
+			log.Fatalln(err)
 		}
 
 		// Set the remote SessionDescription
 		err = peerConnection.SetRemoteDescription(recvOnlyOffer)
 		if err != nil {
-			log.Println(err)
-			panic(err)
+			log.Fatalln(err)
 		}
 
 		// Create answer
@@ -167,8 +156,7 @@ func main() {
 		// Sets the LocalDescription, and starts our UDP listeners
 		err = peerConnection.SetLocalDescription(answer)
 		if err != nil {
-			log.Println(err)
-			panic(err)
+			log.Fatalln(err)
 		}
 
 		// Get the LocalDescription and take it to base64 so we can paste in browser

@@ -53,8 +53,8 @@ func HTTPSDPServer() (chan string, chan string) {
 	go func() {
 		err := http.ListenAndServe(":"+strconv.Itoa(*port), nil)
 		if err != nil {
-			log.Println(err)
-			panic(err)
+			log.Fatalln(err)
+			//panic(err)
 		}
 	}()
 
