@@ -1,17 +1,38 @@
 package signal
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"io/ioutil"
 	"log"
 	"net/http"
 	"strconv"
+
+	"github.com/sikang99/pion-sfu-example/internal/common"
 )
+
+// Middleware process before handler
+func Middleware(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		sessionid := r.Header.Get("x-cojam-session")
+		sess, err := common.GetSession(sessionid)
+		if err != nil {
+			log.Fatalln(err)
+		}
+
+		ctx := context.WithValue(r.Context(), "session", sess)
+		nextRequest := r.WithContext(ctx)
+		next(w, nextRequest)
+	}
+}
 
 // PubHandler process publishers
 func PubHandler(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprintf(w, "PubHandler")
+	if sess := r.Context().Value("session"); sess == nil {
+		http.Error(w, "Not Authorized", http.StatusUnauthorized)
+	}
+	fmt.Fprintf(w, "PubHandler", sess.UserID)
 }
 
 // SubHandler process subscribers
@@ -28,14 +49,15 @@ func MonHandler(w http.ResponseWriter, r *http.Request) {
 func HTTPSDPServer() (chan string, chan string) {
 	port := flag.Int("port", 8080, "port of http server")
 	dir := flag.String("dir", "static", "base directory of file server")
+	//tout := flag.Int("time", 3, "timeout to serve in Second")
 	flag.Parse()
 
 	sdpInChan := make(chan string)
 	sdpOutChan := make(chan string)
 
-	http.HandleFunc("/pub", PubHandler)
-	http.HandleFunc("/sub", SubHandler)
-	http.HandleFunc("/mon", MonHandler)
+	http.HandleFunc("/pub", Middleware(PubHandler))
+	http.HandleFunc("/sub", Middleware(SubHandler))
+	http.HandleFunc("/mon", Middleware(MonHandler))
 
 	http.HandleFunc("/sdp", func(w http.ResponseWriter, r *http.Request) {
 		log.Printf("/sdp connected from %s", r.Host)
@@ -54,7 +76,6 @@ func HTTPSDPServer() (chan string, chan string) {
 		err := http.ListenAndServe(":"+strconv.Itoa(*port), nil)
 		if err != nil {
 			log.Fatalln(err)
-			//panic(err)
 		}
 	}()
 
