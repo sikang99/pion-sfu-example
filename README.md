@@ -6,7 +6,7 @@ Please contact to Stoney Kang, sikang99@gmail.com
 
 ## Reference
 ### Information
-- [web.dev](https://web.dev/)
+- [web.dev](https://web.dev/) - Let's build the future of the web:w
 - [Microsoft Edge Insdier](https://www.microsoftedgeinsider.com/)
 - [Chrome Platform Status](https://chromestatus.com/features)
 - [Chromium Blog](https://blog.chromium.org/)
