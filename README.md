@@ -1,7 +1,7 @@
 # pion-sfu-example
 
 This server example is modfied and enhanced from the original version of 
-pion [sfu-minmal](https://github.com/pion/webrtc/tree/master/examples/sfu-minimal).
+pion [sfu-minmal](https://github.com/pion/webrtc/tree/master/examples/sfu-minimal). \
 Please contact to Stoney Kang, sikang99@gmail.com
 
 
