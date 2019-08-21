@@ -31,6 +31,7 @@ run-client rc:
 	@echo "curl http://localhost:8080/sdp -d [Base64 SDP]"
 	curl http://localhost:8080/pub http://localhost:8080/sub http://localhost:8080/mon
 run-server rs:
+	@-pkill $(SERVER)
 	$(SERVER) &
 run-web rw:
 	open http://localhost:8080/static
