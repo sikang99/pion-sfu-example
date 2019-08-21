@@ -13,6 +13,7 @@ Please contact to Stoney Kang, sikang99@gmail.com
 
 ### Golang
 - [Serving Static Sites with Go](https://www.alexedwards.net/blog/serving-static-sites-with-go)
+- [Golang path and filepath Examples (Base, Dir)](https://www.dotnetperls.com/path-go)
 
 ### Open Source
 - [pion/webrtc](https://github.com/pion/webrtc)

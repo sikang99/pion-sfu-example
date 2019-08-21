@@ -3,6 +3,7 @@ package util
 import (
 	"fmt"
 	"log"
+	"path"
 	"reflect"
 	"runtime"
 )
@@ -53,7 +54,7 @@ func WhereAmI(depthList ...int) string {
 func DebugPrintf(fmt_ string, args ...interface{}) {
 	programCounter, file, line, _ := runtime.Caller(1)
 	fn := runtime.FuncForPC(programCounter)
-	prefix := fmt.Sprintf("[%s:%s %d] %s", file, fn.Name(), line, fmt_)
+	prefix := fmt.Sprintf("[%s,%d: %s] %s", path.Base(file), line, fn.Name(), fmt_)
 	fmt.Printf(prefix, args...)
 	fmt.Println()
 }

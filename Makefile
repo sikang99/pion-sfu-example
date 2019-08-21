@@ -28,7 +28,7 @@ clean:
 run r:
 	@echo "> make (run:r) [client|server]"
 run-client rc:
-	@echo "curl http://localhost:8080/sdp -d "
+	@echo "curl http://localhost:8080/sdp -d [Base64 SDP]"
 run-server rs:
 	$(SERVER) &
 run-web rw:
@@ -67,7 +67,7 @@ git g:
 	@echo "> make (git:g) [update|store]"
 git-update gu:
 	git add .
-	git commit -a -m "web connect without curl"
+	git commit -a -m "create internal/util package"
 	git push
 git-store gs:
 	git config credential.helper store

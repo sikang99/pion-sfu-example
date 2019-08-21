@@ -43,11 +43,12 @@ func HTTPSDPServer() (chan string, chan string) {
 
 	// http server for static files
 	fs := http.FileServer(http.Dir(*dir))
-	http.Handle("/"+*dir+"/", http.StripPrefix("/"+*dir+"/", fs))
+	http.Handle("/static/", http.StripPrefix("/static/", fs))
 
 	go func() {
 		err := http.ListenAndServe(":"+strconv.Itoa(*port), nil)
 		if err != nil {
+			log.Println(err)
 			panic(err)
 		}
 	}()
