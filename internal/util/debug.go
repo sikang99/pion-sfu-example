@@ -3,9 +3,11 @@ package util
 import (
 	"fmt"
 	"log"
+	"net/http"
 	"path"
 	"reflect"
 	"runtime"
+	"strings"
 )
 
 // Tracing for debugging
@@ -57,4 +59,17 @@ func DebugPrintf(fmt_ string, args ...interface{}) {
 	prefix := fmt.Sprintf("[%s,%d: %s] %s", path.Base(file), line, fn.Name(), fmt_)
 	fmt.Printf(prefix, args...)
 	fmt.Println()
+}
+
+// getHost tries its best to return the request host.
+func getHost(r *http.Request) string {
+	if r.URL.IsAbs() {
+		host := r.Host
+		// Slice off any port information.
+		if i := strings.Index(host, ":"); i != -1 {
+			host = host[:i]
+		}
+		return host
+	}
+	return r.URL.Host
 }

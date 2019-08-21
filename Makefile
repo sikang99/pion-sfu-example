@@ -29,6 +29,7 @@ run r:
 	@echo "> make (run:r) [client|server]"
 run-client rc:
 	@echo "curl http://localhost:8080/sdp -d [Base64 SDP]"
+	curl http://localhost:8080/pub http://localhost:8080/sub http://localhost:8080/mon
 run-server rs:
 	$(SERVER) &
 run-web rw:

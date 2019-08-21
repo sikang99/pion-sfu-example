@@ -7,20 +7,21 @@ import (
 	"log"
 	"net/http"
 	"strconv"
-	"strings"
 )
 
-// getHost tries its best to return the request host.
-func getHost(r *http.Request) string {
-	if r.URL.IsAbs() {
-		host := r.Host
-		// Slice off any port information.
-		if i := strings.Index(host, ":"); i != -1 {
-			host = host[:i]
-		}
-		return host
-	}
-	return r.URL.Host
+// PubHandler: Publish handler
+func PubHandler(w http.ResponseWriter, r *http.Request) {
+	fmt.Fprintf(w, "PubHandler")
+}
+
+// SubHandler: Subscriber handler
+func SubHandler(w http.ResponseWriter, r *http.Request) {
+	fmt.Fprintf(w, "SubHandler")
+}
+
+// MonHandler: Monitor handler
+func MonHandler(w http.ResponseWriter, r *http.Request) {
+	fmt.Fprintf(w, "MonHandler")
 }
 
 // HTTPSDPServer starts a HTTP Server that consumes SDPs
@@ -31,6 +32,10 @@ func HTTPSDPServer() (chan string, chan string) {
 
 	sdpInChan := make(chan string)
 	sdpOutChan := make(chan string)
+
+	http.HandleFunc("/pub", PubHandler)
+	http.HandleFunc("/sub", SubHandler)
+	http.HandleFunc("/mon", MonHandler)
 
 	http.HandleFunc("/sdp", func(w http.ResponseWriter, r *http.Request) {
 		log.Printf("/sdp connected from %s", r.Host)
