@@ -52,7 +52,7 @@ func HTTPSDPServer() (chan string, chan string) {
 		}
 	}()
 
-	log.Println("\nPion SFU example server is started\n")
-	log.Printf("started http server on :%d", *port)
+	log.Println("\nWebRTC SFU example server is started\n")
+	log.Printf("started http and file server on :%d and %s", *port, *dir)
 	return sdpInChan, sdpOutChan
 }
