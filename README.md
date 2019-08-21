@@ -11,6 +11,9 @@ Please contact to Stoney Kang, sikang99@gmail.com
 - [Chrome Platform Status](https://chromestatus.com/features)
 - [Chromium Blog](https://blog.chromium.org/)
 
+### Golang
+- [Serving Static Sites with Go](https://www.alexedwards.net/blog/serving-static-sites-with-go)
+
 ### Open Source
 - [pion/webrtc](https://github.com/pion/webrtc)
 
