@@ -12,7 +12,7 @@ import (
 	"github.com/sikang99/pion-sfu-example/internal/common"
 )
 
-// Middleware process before handler
+// Middleware process context before handlers
 func Middleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		sessionid := r.Header.Get("x-cojam-session")
@@ -29,20 +29,26 @@ func Middleware(next http.HandlerFunc) http.HandlerFunc {
 
 // PubHandler process publishers
 func PubHandler(w http.ResponseWriter, r *http.Request) {
-	if sess := r.Context().Value("session"); sess == nil {
+	v := r.Context().Value("session")
+	if v == nil {
 		http.Error(w, "Not Authorized", http.StatusUnauthorized)
+		return
 	}
-	fmt.Fprintf(w, "PubHandler", sess.UserID)
+	sess := v.(common.SessionInfo)
+	fmt.Fprintf(w, "PubHandler: "+string(sess.UserID))
+	log.Println(r.URL.String())
 }
 
 // SubHandler process subscribers
 func SubHandler(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprintf(w, "SubHandler")
+	fmt.Fprintf(w, "SubHandler: ")
+	log.Println(r.URL.String())
 }
 
 // MonHandler monitor the server
 func MonHandler(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprintf(w, "MonHandler")
+	fmt.Fprintf(w, "MonHandler: ")
+	log.Println(r.URL.String())
 }
 
 // HTTPSDPServer starts a HTTP Server that consumes SDPs
