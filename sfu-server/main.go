@@ -9,6 +9,7 @@ import (
 	"github.com/pion/webrtc/v2"
 
 	"github.com/sikang99/pion-sfu-example/internal/signal"
+	"github.com/sikang99/pion-sfu-example/internal/util"
 )
 
 const (
@@ -26,6 +27,7 @@ func main() {
 	// Create a MediaEngine object to configure the supported codec
 	m := webrtc.MediaEngine{}
 
+	util.DebugPrintf("here")
 	// Setup the codecs you want to use.
 	// Only support VP8, this makes our proxying code simpler
 	m.RegisterCodec(webrtc.NewRTPVP8Codec(webrtc.DefaultPayloadTypeVP8, 90000))

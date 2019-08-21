@@ -1,4 +1,4 @@
-package main
+package util
 
 import (
 	"fmt"
@@ -47,10 +47,10 @@ func WhereAmI(depthList ...int) string {
 		depth = depthList[0]
 	}
 	function, file, line, _ := runtime.Caller(depth)
-	return fmt.Sprintf("File: %s  Function: %s Line: %d", chopPath(file), runtime.FuncForPC(function).Name(), line)
+	return fmt.Sprintf("File: %s  Function: %s Line: %d", file, runtime.FuncForPC(function).Name(), line)
 }
 
-func debugPrintf(fmt_ string, args ...interface{}) {
+func DebugPrintf(fmt_ string, args ...interface{}) {
 	programCounter, file, line, _ := runtime.Caller(1)
 	fn := runtime.FuncForPC(programCounter)
 	prefix := fmt.Sprintf("[%s:%s %d] %s", file, fn.Name(), line, fmt_)
