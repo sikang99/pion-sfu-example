@@ -4,5 +4,12 @@ This server example is modfied and enhanced the original of pion [sfu-minmal](ht
 
 
 
-### Reference
+## Reference
+### Information
+- [Microsoft Edge Insdier](https://www.microsoftedgeinsider.com/)
+- [Chrome Platform Status](https://chromestatus.com/features)
+- [Chromium Blog](https://blog.chromium.org/)
+
+### Open Source
 - [pion/webrtc](https://github.com/pion/webrtc)
+
