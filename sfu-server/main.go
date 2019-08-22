@@ -122,7 +122,7 @@ func main() {
 
 	localTrack := <-localTrackChan
 	for {
-		log.Println("Now wait to handle an base64 SDP to start sendonly peer connection")
+		log.Println("Now wait to start sendonly peer connection")
 
 		recvOnlyOffer := webrtc.SessionDescription{}
 		signal.Decode(<-sdpInChan, &recvOnlyOffer)
