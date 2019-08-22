@@ -6,7 +6,7 @@ SERVER=sfu-server
 #----------------------------------------------------------------------------------
 .PHONY: usage edit build clean docker compose git
 usage:
-	@echo "usage: make [edit|build|run|docker|compose]"
+	@echo "usage: make [edit|build|run|list|docker|compose]"
 #----------------------------------------------------------------------------------
 edit e:
 	@echo "> make (edit:e) [client|server|history]"
@@ -21,6 +21,8 @@ build b:
 	CGO_ENABLED=0 GO111MODULE=on go build -o bin/$(SERVER) $(SERVER)/main.go
 	@cp bin/* $(GOPATH)/bin
 	@ls -al $(GOPATH)/bin/$(SERVER)
+list l:
+	go list -m all
 clean:
 	rm -f bin/*
 	docker system prune
