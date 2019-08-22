@@ -37,6 +37,11 @@ func Middleware(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
+func faviconHandler(w http.ResponseWriter, r *http.Request) {
+	http.ServeFile(w, r, "./static/favicon.ico")
+	log.Println(r.URL.String())
+}
+
 // PubHandler process publishers
 func PubHandler(w http.ResponseWriter, r *http.Request) {
 	v := r.Context().Value("session")
@@ -71,6 +76,7 @@ func HTTPSDPServer() (chan string, chan string) {
 	sdpInChan := make(chan string)
 	sdpOutChan := make(chan string)
 
+	http.HandleFunc("/favicon.ico", faviconHandler)
 	http.HandleFunc("/pub", Middleware(PubHandler))
 	http.HandleFunc("/sub", Middleware(SubHandler))
 	http.HandleFunc("/mon", Middleware(MonHandler))
@@ -82,7 +88,7 @@ func HTTPSDPServer() (chan string, chan string) {
 		sdpInChan <- string(body)
 		// send response of sdp
 		fmt.Fprintf(w, <-sdpOutChan)
-		log.Println("sent to client")
+		log.Println("sent base SDP to client")
 	})
 
 	// http server for static files
@@ -96,7 +102,7 @@ func HTTPSDPServer() (chan string, chan string) {
 		}
 	}()
 
-	log.Println("\nWebRTC SFU example server is started\n")
+	log.Println("\nWebRTC SFU example server is started")
 	log.Printf("started http and file server on :%d and %s", *port, *dir)
 	return sdpInChan, sdpOutChan
 }
