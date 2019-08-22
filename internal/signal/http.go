@@ -21,7 +21,11 @@ func Middleware(next http.HandlerFunc) http.HandlerFunc {
 			log.Fatalln(err)
 		}
 
-		ctx := context.WithValue(r.Context(), "session", sess)
+		// to control related workers
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		ctx = context.WithValue(ctx, "session", sess)
 		nextRequest := r.WithContext(ctx)
 		next(w, nextRequest)
 	}
@@ -72,6 +76,7 @@ func HTTPSDPServer() (chan string, chan string) {
 		sdpInChan <- string(body)
 		// send response of sdp
 		fmt.Fprintf(w, <-sdpOutChan)
+		log.Println("sent to client")
 	})
 
 	// http server for static files
