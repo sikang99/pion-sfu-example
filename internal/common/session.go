@@ -13,3 +13,10 @@ func GetSession(sessionid string) (SessionInfo, error) {
 	sess := SessionInfo{UserID: "Stoney"}
 	return sess, nil
 }
+
+// RoomInfo means information record of video room
+type RoomInfo struct {
+	RoomID     string
+	CreateTime string
+	UseTime    string
+}
