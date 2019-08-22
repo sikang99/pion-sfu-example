@@ -114,7 +114,7 @@ func main() {
 		log.Fatalln(err)
 	}
 
-	log.Println("ANSWER for Caster\n", answer) // json format of SDP
+	log.Println("ANSWER for Caster => \n", answer) // json format of SDP
 	// Get the LocalDescription and take it to base64 so we can paste in browser
 	baseAnswer := signal.Encode(answer)
 	sdpOutChan <- baseAnswer
