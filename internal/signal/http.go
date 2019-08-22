@@ -12,6 +12,11 @@ import (
 	"github.com/sikang99/pion-sfu-example/internal/common"
 )
 
+// createSessionKey is for the internal use to avoid duplaicate keys
+func createSessionKey(key string) string {
+	return "cojam" + key
+}
+
 // Middleware process context before handlers
 func Middleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -25,8 +30,9 @@ func Middleware(next http.HandlerFunc) http.HandlerFunc {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
-		ctx = context.WithValue(ctx, "session", sess)
+		ctx = context.WithValue(ctx, createSessionKey("session"), sess)
 		nextRequest := r.WithContext(ctx)
+
 		next(w, nextRequest)
 	}
 }
