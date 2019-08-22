@@ -122,11 +122,11 @@ func main() {
 
 	localTrack := <-localTrackChan
 	for {
-		log.Println("Now wait to start sendonly peer connection")
+		log.Println("Now waiting to start player(sendonly peer) connections ...")
 
 		recvOnlyOffer := webrtc.SessionDescription{}
 		signal.Decode(<-sdpInChan, &recvOnlyOffer)
-		log.Println(recvOnlyOffer) // json format
+		log.Println("OFFER for player => ", recvOnlyOffer) // json format
 
 		// Create a new PeerConnection
 		peerConnection, err := api.NewPeerConnection(peerConnectionConfig)
@@ -158,7 +158,7 @@ func main() {
 			log.Fatalln(err)
 		}
 
-		log.Println("ANSWER for Player\n", answer) // json format of SDP
+		log.Println("ANSWER for Player => \n", answer) // json format of SDP
 		// Get the LocalDescription and take it to base64 so we can paste in browser
 		playAnswer := signal.Encode(answer)
 		sdpOutChan <- playAnswer

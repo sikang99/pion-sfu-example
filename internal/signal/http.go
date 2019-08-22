@@ -37,6 +37,7 @@ func Middleware(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
+//
 func faviconHandler(w http.ResponseWriter, r *http.Request) {
 	http.ServeFile(w, r, "./static/favicon.ico")
 	log.Println(r.URL.String())
@@ -88,7 +89,7 @@ func HTTPSDPServer() (chan string, chan string) {
 		sdpInChan <- string(body)
 		// send response of sdp
 		fmt.Fprintf(w, <-sdpOutChan)
-		log.Println("sent base SDP to client")
+		log.Println("sent base64 SDP to client")
 	})
 
 	// http server for static files
