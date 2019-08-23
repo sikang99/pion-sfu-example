@@ -39,6 +39,8 @@ run-web rw:
 	open http://localhost:8080/static
 kill k:
 	@-pkill $(SERVER)
+version v:
+	go version -m bin/$(SERVER)
 #----------------------------------------------------------------------------------
 TAG=0.0.1
 NAME=teamgrit/pion-sfu

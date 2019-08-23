@@ -148,7 +148,7 @@ func main() {
 		// Create answer
 		answer, err := peerConnection.CreateAnswer(nil)
 		if err != nil {
-			log.Println(err)
+			log.Fatalln(err)
 			panic(err)
 		}
 
