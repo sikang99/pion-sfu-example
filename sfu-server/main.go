@@ -16,10 +16,13 @@ const (
 	rtcpPLIInterval = time.Second * 3
 )
 
-func main() {
+func init() {
 	// default setting for logger
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
+}
 
+func main() {
+	// channels for send/recv SDPs
 	sdpInChan, sdpOutChan := signal.HTTPSDPServer()
 
 	// Everything below is the Pion WebRTC API, thanks for using it ❤️.
