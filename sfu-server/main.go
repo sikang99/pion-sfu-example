@@ -25,7 +25,7 @@ func main() {
 	// channels for send/recv SDPs
 	sdpInChan, sdpOutChan := signal.HTTPSDPServer()
 
-	// Everything below is the Pion WebRTC API, thanks for using it ❤️.
+	// Everything below is the Pion WebRTC API, thanks for using it.
 	// Create a MediaEngine object to configure the supported codec
 	m := webrtc.MediaEngine{}
 
