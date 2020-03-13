@@ -5,21 +5,22 @@
 <body>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/axios/0.19.0/axios.min.js"></script>
 <script src="demo.js"></script>
+
 <div id="signalingContainer" style="display: none">
   Browser base64 Session Description<br />
-  <textarea rows="5" cols="80" id="localSessionDescription" readonly="true"></textarea> <br />
-  
+  <textarea rows="5" cols="80" id="localSessionDescription" readonly="true"></textarea><br />
+
   Server base64 Session Description<br />
-  <textarea rows="5" cols="80" id="remoteSessionDescription"></textarea> <br/>
+  <textarea rows="5" cols="80" id="remoteSessionDescription"></textarea><br/>
   <button onclick="window.startSession()"> Start Session </button><br />
 </div>
 <br />
 
 Video<br />
-<video id="video1" width="320" height="240" autoplay muted></video> <br />
+<video id="video1" width="320" height="240" autoplay></video> <br />
 
-<button class="createSessionButton" onclick="window.createSession(true)"> Publish a Broadcast </button>
-<button class="createSessionButton" onclick="window.createSession(false)"> Subscribe a Broadcast </button><br />
+<button class="createSessionButton" onclick="window.createSession(true)"> Publish </button>
+<button class="createSessionButton" onclick="window.createSession(false)"> Subscribe </button><br />
 <br />
 
 Logs<br />

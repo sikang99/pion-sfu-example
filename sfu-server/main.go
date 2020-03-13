@@ -25,6 +25,10 @@ func main() {
 	// channels for send/recv SDPs
 	sdpInChan, sdpOutChan := signal.HTTPSDPServer()
 
+	offer := webrtc.SessionDescription{}
+	signal.Decode(<-sdpInChan, &offer)
+	log.Println("OFFER\n", offer) // json format
+
 	// Everything below is the Pion WebRTC API, thanks for using it.
 	// Create a MediaEngine object to configure the supported codec
 	m := webrtc.MediaEngine{}
@@ -39,10 +43,6 @@ func main() {
 
 	// Create the API object with the MediaEngine
 	api := webrtc.NewAPI(webrtc.WithMediaEngine(m))
-
-	offer := webrtc.SessionDescription{}
-	signal.Decode(<-sdpInChan, &offer)
-	log.Println("OFFER\n", offer) // json format
 
 	peerConnectionConfig := webrtc.Configuration{
 		ICEServers: []webrtc.ICEServer{

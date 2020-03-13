@@ -3,6 +3,8 @@ const log = msg => {
   document.getElementById('logs').innerHTML += msg + '<br>'
 }
 
+var isAgent = false;
+
 window.createSession = async isPublisher => {
   let pc = new RTCPeerConnection({
     iceServers: [
@@ -24,6 +26,8 @@ window.createSession = async isPublisher => {
       pc.addStream(document.getElementById('video1').srcObject = stream)
       const offer = await pc.createOffer()
       await pc.setLocalDescription(offer)
+      isAgent = isPublisher;
+      console.log(isAgent)
     } else {
       pc.addTransceiver('video', {'direction': 'recvonly'})
       const offer = await pc.createOffer();
