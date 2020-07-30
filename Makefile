@@ -25,7 +25,7 @@ list l:
 	go list -m all
 clean:
 	rm -f bin/*
-	docker system prune
+	docker system prune -f
 #----------------------------------------------------------------------------------
 run r:
 	@echo "> make (run:r) [client|server|web]"
