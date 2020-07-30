@@ -121,7 +121,7 @@ func main() {
 	// Get the LocalDescription and take it to base64 so we can paste in browser
 	baseAnswer := signal.Encode(answer)
 	sdpOutChan <- baseAnswer
-	log.Println(baseAnswer)
+	//log.Println(baseAnswer)
 
 	localTrack := <-localTrackChan
 	for {
@@ -165,6 +165,6 @@ func main() {
 		// Get the LocalDescription and take it to base64 so we can paste in browser
 		playAnswer := signal.Encode(answer)
 		sdpOutChan <- playAnswer
-		log.Println(playAnswer)
+		//log.Println(playAnswer)
 	}
 }
