@@ -78,30 +78,27 @@ func (m *MediaEngine) PopulateFromSDP(sd SessionDescription) error {
 			}
 
 			var codec *RTPCodec
-			clockRate := payloadCodec.ClockRate
-			parameters := payloadCodec.Fmtp
-			codecName := strings.ToUpper(payloadCodec.Name)
-			switch codecName {
-			case PCMU:
-				codec = NewRTPPCMUCodec(payloadType, clockRate)
-			case PCMA:
-				codec = NewRTPPCMACodec(payloadType, clockRate)
-			case G722:
-				codec = NewRTPG722Codec(payloadType, clockRate)
-			case Opus:
-				codec = NewRTPOpusCodec(payloadType, clockRate)
-			case VP8:
-				codec = NewRTPVP8Codec(payloadType, clockRate)
-			case VP9:
-				codec = NewRTPVP9Codec(payloadType, clockRate)
-			case H264:
-				codec = NewRTPH264Codec(payloadType, clockRate)
+			switch {
+			case strings.EqualFold(payloadCodec.Name, PCMA):
+				codec = NewRTPPCMACodec(payloadType, payloadCodec.ClockRate)
+			case strings.EqualFold(payloadCodec.Name, PCMU):
+				codec = NewRTPPCMUCodec(payloadType, payloadCodec.ClockRate)
+			case strings.EqualFold(payloadCodec.Name, G722):
+				codec = NewRTPG722Codec(payloadType, payloadCodec.ClockRate)
+			case strings.EqualFold(payloadCodec.Name, Opus):
+				codec = NewRTPOpusCodec(payloadType, payloadCodec.ClockRate)
+			case strings.EqualFold(payloadCodec.Name, VP8):
+				codec = NewRTPVP8Codec(payloadType, payloadCodec.ClockRate)
+			case strings.EqualFold(payloadCodec.Name, VP9):
+				codec = NewRTPVP9Codec(payloadType, payloadCodec.ClockRate)
+			case strings.EqualFold(payloadCodec.Name, H264):
+				codec = NewRTPH264Codec(payloadType, payloadCodec.ClockRate)
 			default:
 				// ignoring other codecs
 				continue
 			}
-			codec.SDPFmtpLine = parameters
 
+			codec.SDPFmtpLine = payloadCodec.Fmtp
 			m.RegisterCodec(codec)
 		}
 	}
@@ -146,7 +143,7 @@ const (
 	PCMU = "PCMU"
 	PCMA = "PCMA"
 	G722 = "G722"
-	Opus = "OPUS"
+	Opus = "opus"
 	VP8  = "VP8"
 	VP9  = "VP9"
 	H264 = "H264"
@@ -213,12 +210,12 @@ func NewRTPVP8Codec(payloadType uint8, clockrate uint32) *RTPCodec {
 }
 
 // NewRTPVP8CodecExt is a helper to create an VP8 codec
-func NewRTPVP8CodecExt(payloadType uint8, clockrate uint32, rtcpfb []RTCPFeedback) *RTPCodec {
+func NewRTPVP8CodecExt(payloadType uint8, clockrate uint32, rtcpfb []RTCPFeedback, fmtp string) *RTPCodec {
 	c := NewRTPCodecExt(RTPCodecTypeVideo,
 		VP8,
 		clockrate,
 		0,
-		"",
+		fmtp,
 		payloadType,
 		rtcpfb,
 		&codecs.VP8Payloader{})
@@ -250,12 +247,12 @@ func NewRTPH264Codec(payloadType uint8, clockrate uint32) *RTPCodec {
 }
 
 // NewRTPH264CodecExt is a helper to create an H264 codec
-func NewRTPH264CodecExt(payloadType uint8, clockrate uint32, rtcpfb []RTCPFeedback) *RTPCodec {
+func NewRTPH264CodecExt(payloadType uint8, clockrate uint32, rtcpfb []RTCPFeedback, fmtp string) *RTPCodec {
 	c := NewRTPCodecExt(RTPCodecTypeVideo,
 		H264,
 		clockrate,
 		0,
-		"level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42001f",
+		fmtp,
 		payloadType,
 		rtcpfb,
 		&codecs.H264Payloader{})

@@ -14,18 +14,21 @@ type hashAlgorithm uint16
 
 // Supported hash hash algorithms
 const (
-	// hashAlgorithmMD2    hashAlgorithm = 0 // Blacklisted
-	hashAlgorithmMD5    hashAlgorithm = 1 // Blacklisted
-	hashAlgorithmSHA1   hashAlgorithm = 2 // Blacklisted
-	hashAlgorithmSHA224 hashAlgorithm = 3
-	hashAlgorithmSHA256 hashAlgorithm = 4
-	hashAlgorithmSHA384 hashAlgorithm = 5
-	hashAlgorithmSHA512 hashAlgorithm = 6
+	hashAlgorithmMD2     hashAlgorithm = 0 // Blacklisted
+	hashAlgorithmMD5     hashAlgorithm = 1 // Blacklisted
+	hashAlgorithmSHA1    hashAlgorithm = 2 // Blacklisted
+	hashAlgorithmSHA224  hashAlgorithm = 3
+	hashAlgorithmSHA256  hashAlgorithm = 4
+	hashAlgorithmSHA384  hashAlgorithm = 5
+	hashAlgorithmSHA512  hashAlgorithm = 6
+	hashAlgorithmEd25519 hashAlgorithm = 8
 )
 
 // String makes hashAlgorithm printable
 func (h hashAlgorithm) String() string {
 	switch h {
+	case hashAlgorithmMD2:
+		return "md2"
 	case hashAlgorithmMD5:
 		return "md5" // [RFC3279]
 	case hashAlgorithmSHA1:
@@ -38,8 +41,10 @@ func (h hashAlgorithm) String() string {
 		return "sha-384" // [RFC4055]
 	case hashAlgorithmSHA512:
 		return "sha-512" // [RFC4055]
+	case hashAlgorithmEd25519:
+		return "null"
 	default:
-		return "unknown hash algorithm"
+		return "unknown or unsupported hash algorithm"
 	}
 }
 
@@ -68,6 +73,15 @@ func (h hashAlgorithm) digest(b []byte) []byte {
 	}
 }
 
+func (h hashAlgorithm) insecure() bool {
+	switch h {
+	case hashAlgorithmMD2, hashAlgorithmMD5, hashAlgorithmSHA1:
+		return true
+	default:
+		return false
+	}
+}
+
 func (h hashAlgorithm) cryptoHash() crypto.Hash {
 	switch h {
 	case hashAlgorithmMD5:
@@ -82,16 +96,19 @@ func (h hashAlgorithm) cryptoHash() crypto.Hash {
 		return crypto.SHA384
 	case hashAlgorithmSHA512:
 		return crypto.SHA512
+	case hashAlgorithmEd25519:
+		return crypto.Hash(0)
 	default:
-		return 0
+		return crypto.Hash(0)
 	}
 }
 
 var hashAlgorithms = map[hashAlgorithm]struct{}{
-	hashAlgorithmMD5:    {},
-	hashAlgorithmSHA1:   {},
-	hashAlgorithmSHA224: {},
-	hashAlgorithmSHA256: {},
-	hashAlgorithmSHA384: {},
-	hashAlgorithmSHA512: {},
+	hashAlgorithmMD5:     {},
+	hashAlgorithmSHA1:    {},
+	hashAlgorithmSHA224:  {},
+	hashAlgorithmSHA256:  {},
+	hashAlgorithmSHA384:  {},
+	hashAlgorithmSHA512:  {},
+	hashAlgorithmEd25519: {},
 }

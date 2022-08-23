@@ -4,7 +4,6 @@ package ice
 
 import (
 	"context"
-	"fmt"
 	"math/rand"
 	"net"
 	"strings"
@@ -17,7 +16,6 @@ import (
 	"github.com/pion/stun"
 	"github.com/pion/transport/packetio"
 	"github.com/pion/transport/vnet"
-	"golang.org/x/net/ipv4"
 )
 
 const (
@@ -68,15 +66,18 @@ type bindingRequest struct {
 
 // Agent represents the ICE agent
 type Agent struct {
-	onConnectionStateChangeHdlr       func(ConnectionState)
-	onSelectedCandidatePairChangeHdlr func(Candidate, Candidate)
-	onCandidateHdlr                   func(Candidate)
+	// Lock for transactional operations on Agent. Unlike a mutex
+	// all queued lock attempts are canceled when .Close() is called
+	muChan chan struct{}
+
+	onConnectionStateChangeHdlr       atomic.Value // func(ConnectionState)
+	onSelectedCandidatePairChangeHdlr atomic.Value // func(Candidate, Candidate)
+	onCandidateHdlr                   atomic.Value // func(Candidate)
 
 	// Used to block double Dial/Accept
 	opened bool
 
 	// State owned by the taskLoop
-	taskChan        chan task
 	onConnected     chan struct{}
 	onConnectedOnce sync.Once
 
@@ -133,8 +134,7 @@ type Agent struct {
 	checklist []*candidatePair
 	selector  pairCandidateSelector
 
-	selectedPairMutex sync.RWMutex
-	selectedPair      *candidatePair
+	selectedPair atomic.Value // *candidatePair
 
 	urls         []*URL
 	networkTypes []NetworkType
@@ -151,12 +151,17 @@ type Agent struct {
 	done chan struct{}
 	err  atomicError
 
+	chanCandidate chan Candidate
+	chanState     chan ConnectionState
+
 	loggerFactory logging.LoggerFactory
 	log           logging.LeveledLogger
 
 	net *vnet.Net
 
 	interfaceFilter func(string) bool
+
+	insecureSkipVerify bool
 }
 
 func (a *Agent) ok() error {
@@ -169,11 +174,28 @@ func (a *Agent) ok() error {
 }
 
 func (a *Agent) getErr() error {
-	err := a.err.Load()
-	if err != nil {
+	if err := a.err.Load(); err != nil {
 		return err
 	}
 	return ErrClosed
+}
+
+// Run an operation with the the lock taken
+// If the agent is closed return an error
+func (a *Agent) run(t func(*Agent)) error {
+	if err := a.ok(); err != nil {
+		return err
+	}
+
+	select {
+	case <-a.done:
+		return a.getErr()
+	case a.muChan <- struct{}{}:
+		t(a)
+
+		<-a.muChan
+		return nil
+	}
 }
 
 // AgentConfig collects the arguments to ice.Agent construction into
@@ -269,49 +291,10 @@ type AgentConfig struct {
 	// InterfaceFilter is a function that you can use in order to  whitelist or blacklist
 	// the interfaces which are used to gather ICE candidates.
 	InterfaceFilter func(string) bool
-}
 
-func containsCandidateType(candidateType CandidateType, candidateTypeList []CandidateType) bool {
-	if candidateTypeList == nil {
-		return false
-	}
-	for _, ct := range candidateTypeList {
-		if ct == candidateType {
-			return true
-		}
-	}
-	return false
-}
-
-func createMulticastDNS(mDNSMode MulticastDNSMode, mDNSName string, log logging.LeveledLogger) (*mdns.Conn, MulticastDNSMode, error) {
-	if mDNSMode == MulticastDNSModeDisabled {
-		return nil, mDNSMode, nil
-	}
-
-	addr, mdnsErr := net.ResolveUDPAddr("udp4", mdns.DefaultAddress)
-	if mdnsErr != nil {
-		return nil, mDNSMode, mdnsErr
-	}
-
-	l, mdnsErr := net.ListenUDP("udp4", addr)
-	if mdnsErr != nil {
-		// If ICE fails to start MulticastDNS server just warn the user and continue
-		log.Errorf("Failed to enable mDNS, continuing in mDNS disabled mode: (%s)", mdnsErr)
-		return nil, MulticastDNSModeDisabled, nil
-	}
-
-	switch mDNSMode {
-	case MulticastDNSModeQueryOnly:
-		conn, err := mdns.Server(ipv4.NewPacketConn(l), &mdns.Config{})
-		return conn, mDNSMode, err
-	case MulticastDNSModeQueryAndGather:
-		conn, err := mdns.Server(ipv4.NewPacketConn(l), &mdns.Config{
-			LocalNames: []string{mDNSName},
-		})
-		return conn, mDNSMode, err
-	default:
-		return nil, mDNSMode, nil
-	}
+	// InsecureSkipVerify controls if self-signed certificates are accepted when connecting
+	// to TURN servers via TLS or DTLS
+	InsecureSkipVerify bool
 }
 
 // NewAgent creates a new Agent
@@ -389,16 +372,17 @@ func NewAgent(config *AgentConfig) (*Agent, error) {
 		networkTypes:           config.NetworkTypes,
 		localUfrag:             localUfrag,
 		localPwd:               localPwd,
-		taskChan:               make(chan task),
 		onConnected:            make(chan struct{}),
 		buffer:                 packetio.NewBuffer(),
 		done:                   make(chan struct{}),
+		chanState:              make(chan ConnectionState, 1),
 		portmin:                config.PortMin,
 		portmax:                config.PortMax,
 		trickle:                config.Trickle,
 		loggerFactory:          loggerFactory,
 		log:                    log,
 		net:                    config.Net,
+		muChan:                 make(chan struct{}, 1),
 
 		mDNSMode: mDNSMode,
 		mDNSName: mDNSName,
@@ -407,6 +391,8 @@ func NewAgent(config *AgentConfig) (*Agent, error) {
 		forceCandidateContact: make(chan bool, 1),
 
 		interfaceFilter: config.InterfaceFilter,
+
+		insecureSkipVerify: config.InsecureSkipVerify,
 	}
 	a.haveStarted.Store(false)
 
@@ -441,11 +427,18 @@ func NewAgent(config *AgentConfig) (*Agent, error) {
 		return nil, err
 	}
 
-	go a.taskLoop()
+	go func() {
+		for s := range a.chanState {
+			hdlr, ok := a.onConnectionStateChangeHdlr.Load().(func(ConnectionState))
+			if ok {
+				hdlr(s)
+			}
+		}
+	}()
 
 	// Initialize local candidates
 	if !a.trickle {
-		a.gatherCandidates()
+		<-a.gatherCandidates()
 	}
 	return a, nil
 }
@@ -554,31 +547,28 @@ func (a *Agent) initExtIPMapping(config *AgentConfig) error {
 
 // OnConnectionStateChange sets a handler that is fired when the connection state changes
 func (a *Agent) OnConnectionStateChange(f func(ConnectionState)) error {
-	return a.run(func(agent *Agent) {
-		agent.onConnectionStateChangeHdlr = f
-	})
+	a.onConnectionStateChangeHdlr.Store(f)
+	return nil
 }
 
 // OnSelectedCandidatePairChange sets a handler that is fired when the final candidate
 // pair is selected
 func (a *Agent) OnSelectedCandidatePairChange(f func(Candidate, Candidate)) error {
-	return a.run(func(agent *Agent) {
-		agent.onSelectedCandidatePairChangeHdlr = f
-	})
+	a.onSelectedCandidatePairChangeHdlr.Store(f)
+	return nil
 }
 
 // OnCandidate sets a handler that is fired when new candidates gathered. When
 // the gathering process complete the last candidate is nil.
 func (a *Agent) OnCandidate(f func(Candidate)) error {
-	return a.run(func(agent *Agent) {
-		agent.onCandidateHdlr = f
-	})
+	a.onCandidateHdlr.Store(f)
+	return nil
 }
 
 func (a *Agent) onSelectedCandidatePairChange(p *candidatePair) {
 	if p != nil {
-		if a.onSelectedCandidatePairChangeHdlr != nil {
-			a.onSelectedCandidatePairChangeHdlr(p.local, p.remote)
+		if h, ok := a.onSelectedCandidatePairChangeHdlr.Load().(func(Candidate, Candidate)); ok {
+			h(p.local, p.remote)
 		}
 	}
 }
@@ -618,6 +608,27 @@ func (a *Agent) startConnectivityChecks(isControlling bool, remoteUfrag, remoteP
 		// TODO this should be dynamic, and grow when the connection is stable
 		a.requestConnectivityCheck()
 		agent.connectivityTicker = time.NewTicker(a.taskLoopInterval)
+
+		go func() {
+			contact := func() {
+				if err := a.run(func(a *Agent) {
+					a.selector.ContactCandidates()
+				}); err != nil {
+					a.log.Warnf("taskLoop failed: %v", err)
+				}
+			}
+
+			for {
+				select {
+				case <-a.forceCandidateContact:
+					contact()
+				case <-a.connectivityTicker.C:
+					contact()
+				case <-a.done:
+					return
+				}
+			}
+		}()
 	})
 }
 
@@ -625,12 +636,10 @@ func (a *Agent) updateConnectionState(newState ConnectionState) {
 	if a.connectionState != newState {
 		a.log.Infof("Setting new connection state: %s", newState)
 		a.connectionState = newState
-		hdlr := a.onConnectionStateChangeHdlr
-		if hdlr != nil {
-			// Call handler async since we may be holding the agent lock
-			// and the handler may also require it
-			go hdlr(newState)
-		}
+
+		// Call handler in different routine since we may be holding the agent lock
+		// and the handler may also require it
+		a.chanState <- newState
 	}
 }
 
@@ -639,10 +648,14 @@ func (a *Agent) setSelectedPair(p *candidatePair) {
 	// Notify when the selected pair changes
 	a.onSelectedCandidatePairChange(p)
 
-	a.selectedPairMutex.Lock()
-	a.selectedPair = p
-	a.selectedPair.nominated = true
-	a.selectedPairMutex.Unlock()
+	if p != nil {
+		p.nominated = true
+		a.selectedPair.Store(p)
+	} else {
+		var nilPair *candidatePair
+		a.selectedPair.Store(nilPair)
+	}
+
 	a.updateConnectionState(ConnectionStateConnected)
 
 	// Close mDNS Conn. We don't need to do anymore querying
@@ -654,6 +667,12 @@ func (a *Agent) setSelectedPair(p *candidatePair) {
 }
 
 func (a *Agent) pingAllCandidates() {
+	a.log.Trace("pinging all candidates")
+
+	if len(a.checklist) == 0 {
+		a.log.Warn("pingAllCandidates called with no candidate pairs. Connection is not possible yet.")
+	}
+
 	for _, p := range a.checklist {
 		if p.state == CandidatePairStateWaiting {
 			p.state = CandidatePairStateInProgress
@@ -718,65 +737,17 @@ func (a *Agent) findPair(local, remote Candidate) *candidatePair {
 	return nil
 }
 
-// A task is a
-type task func(*Agent)
-
-func (a *Agent) run(t task) error {
-	err := a.ok()
-	if err != nil {
-		return err
-	}
-
-	select {
-	case <-a.done:
-		return a.getErr()
-	case a.taskChan <- t:
-	}
-	return nil
-}
-
-func (a *Agent) taskLoop() {
-	for {
-		if a.selector != nil {
-			select {
-			case <-a.forceCandidateContact:
-				a.selector.ContactCandidates()
-			case <-a.connectivityTicker.C:
-				a.selector.ContactCandidates()
-			case t := <-a.taskChan:
-				// Run the task
-				t(a)
-
-			case <-a.done:
-				return
-			}
-		} else {
-			select {
-			case <-a.forceCandidateContact:
-			case t := <-a.taskChan:
-				// Run the task
-				t(a)
-
-			case <-a.done:
-				return
-			}
-		}
-	}
-}
-
 // validateSelectedPair checks if the selected pair is (still) valid
 // Note: the caller should hold the agent lock.
 func (a *Agent) validateSelectedPair() bool {
-	selectedPair, err := a.getSelectedPair()
-	if err != nil {
+	selectedPair := a.getSelectedPair()
+	if selectedPair == nil {
 		return false
 	}
 
 	if (a.connectionTimeout != 0) &&
 		(time.Since(selectedPair.remote.LastReceived()) > a.connectionTimeout) {
-		a.selectedPairMutex.Lock()
-		a.selectedPair = nil
-		a.selectedPairMutex.Unlock()
+		a.setSelectedPair(nil)
 		a.updateConnectionState(ConnectionStateDisconnected)
 		return false
 	}
@@ -788,8 +759,8 @@ func (a *Agent) validateSelectedPair() bool {
 // if no packet has been sent on that pair in the last keepaliveInterval
 // Note: the caller should hold the agent lock.
 func (a *Agent) checkKeepalive() {
-	selectedPair, err := a.getSelectedPair()
-	if err != nil {
+	selectedPair := a.getSelectedPair()
+	if selectedPair == nil {
 		return
 	}
 
@@ -819,9 +790,15 @@ func (a *Agent) AddRemoteCandidate(c Candidate) error {
 		return nil
 	}
 
-	return a.run(func(agent *Agent) {
-		agent.addRemoteCandidate(c)
-	})
+	go func() {
+		if err := a.run(func(agent *Agent) {
+			agent.addRemoteCandidate(c)
+		}); err != nil {
+			a.log.Warnf("Failed to add remote candidate %s: %v", c.Address(), err)
+			return
+		}
+	}()
+	return nil
 }
 
 func (a *Agent) resolveAndAddMulticastCandidate(c *CandidateHost) {
@@ -879,30 +856,38 @@ func (a *Agent) addRemoteCandidate(c Candidate) {
 	a.requestConnectivityCheck()
 }
 
-// addCandidate assumes you are holding the lock (must be execute using a.run)
-func (a *Agent) addCandidate(c Candidate) {
-	set := a.localCandidates[c.NetworkType()]
-	for _, candidate := range set {
-		if candidate.Equal(c) {
-			return
+func (a *Agent) addCandidate(c Candidate, candidateConn net.PacketConn) error {
+	return a.run(func(agent *Agent) {
+		c.start(a, candidateConn)
+
+		set := a.localCandidates[c.NetworkType()]
+		for _, candidate := range set {
+			if candidate.Equal(c) {
+				if err := c.close(); err != nil {
+					a.log.Warnf("Failed to close duplicate candidate: %v", err)
+				}
+				return
+			}
 		}
-	}
 
-	set = append(set, c)
-	a.localCandidates[c.NetworkType()] = set
+		set = append(set, c)
+		a.localCandidates[c.NetworkType()] = set
 
-	if remoteCandidates, ok := a.remoteCandidates[c.NetworkType()]; ok {
-		for _, remoteCandidate := range remoteCandidates {
-			a.addPair(c, remoteCandidate)
+		if remoteCandidates, ok := a.remoteCandidates[c.NetworkType()]; ok {
+			for _, remoteCandidate := range remoteCandidates {
+				a.addPair(c, remoteCandidate)
+			}
 		}
-	}
 
-	a.requestConnectivityCheck()
+		a.requestConnectivityCheck()
+
+		a.chanCandidate <- c
+	})
 }
 
 // GetLocalCandidates returns the local candidates
 func (a *Agent) GetLocalCandidates() ([]Candidate, error) {
-	res := make(chan []Candidate)
+	res := make(chan []Candidate, 1)
 
 	err := a.run(func(agent *Agent) {
 		var candidates []Candidate
@@ -929,6 +914,7 @@ func (a *Agent) Close() error {
 	err := a.run(func(agent *Agent) {
 		defer func() {
 			close(done)
+			close(agent.chanState)
 		}()
 		agent.err.Store(ErrClosed)
 		close(agent.done)
@@ -961,30 +947,20 @@ func (a *Agent) Close() error {
 		}
 
 		a.closeMulticastConn()
+		a.updateConnectionState(ConnectionStateClosed)
 	})
 	if err != nil {
 		return err
 	}
 
 	<-done
-	a.updateConnectionState(ConnectionStateClosed)
-
 	return nil
 }
 
 func (a *Agent) findRemoteCandidate(networkType NetworkType, addr net.Addr) Candidate {
-	var ip net.IP
-	var port int
-
-	switch casted := addr.(type) {
-	case *net.UDPAddr:
-		ip = casted.IP
-		port = casted.Port
-	case *net.TCPAddr:
-		ip = casted.IP
-		port = casted.Port
-	default:
-		a.log.Warnf("unsupported address type %T", a)
+	ip, port, err := addrIPAndPort(addr)
+	if err != nil {
+		a.log.Warn(err.Error())
 		return nil
 	}
 
@@ -1152,28 +1128,30 @@ func (a *Agent) handleInbound(m *stun.Message, local Candidate, remote net.Addr)
 	}
 }
 
-// noSTUNSeen processes non STUN traffic from a remote candidate,
+// validateNonSTUNTraffic processes non STUN traffic from a remote candidate,
 // and returns true if it is an actual remote candidate
-func (a *Agent) noSTUNSeen(local Candidate, remote net.Addr) bool {
-	remoteCandidate := a.findRemoteCandidate(local.NetworkType(), remote)
-	if remoteCandidate == nil {
-		return false
+func (a *Agent) validateNonSTUNTraffic(local Candidate, remote net.Addr) bool {
+	var isValidCandidate uint64
+	if err := a.run(func(agent *Agent) {
+		remoteCandidate := a.findRemoteCandidate(local.NetworkType(), remote)
+		if remoteCandidate != nil {
+			remoteCandidate.seen(false)
+			atomic.AddUint64(&isValidCandidate, 1)
+		}
+	}); err != nil {
+		a.log.Warnf("failed to validate remote candidate: %v", err)
 	}
 
-	remoteCandidate.seen(false)
-	return true
+	return atomic.LoadUint64(&isValidCandidate) == 1
 }
 
-func (a *Agent) getSelectedPair() (*candidatePair, error) {
-	a.selectedPairMutex.RLock()
-	selectedPair := a.selectedPair
-	a.selectedPairMutex.RUnlock()
-
+func (a *Agent) getSelectedPair() *candidatePair {
+	selectedPair := a.selectedPair.Load()
 	if selectedPair == nil {
-		return nil, ErrNoCandidatePairs
+		return nil
 	}
 
-	return selectedPair, nil
+	return selectedPair.(*candidatePair)
 }
 
 func (a *Agent) closeMulticastConn() {
@@ -1186,7 +1164,7 @@ func (a *Agent) closeMulticastConn() {
 
 // GetCandidatePairsStats returns a list of candidate pair stats
 func (a *Agent) GetCandidatePairsStats() []CandidatePairStats {
-	resultChan := make(chan []CandidatePairStats)
+	resultChan := make(chan []CandidatePairStats, 1)
 	err := a.run(func(agent *Agent) {
 		result := make([]CandidatePairStats, 0, len(agent.checklist))
 		for _, cp := range agent.checklist {
@@ -1232,7 +1210,7 @@ func (a *Agent) GetCandidatePairsStats() []CandidatePairStats {
 
 // GetLocalCandidatesStats returns a list of local candidates stats
 func (a *Agent) GetLocalCandidatesStats() []CandidateStats {
-	resultChan := make(chan []CandidateStats)
+	resultChan := make(chan []CandidateStats, 1)
 	err := a.run(func(agent *Agent) {
 		result := make([]CandidateStats, 0, len(agent.localCandidates))
 		for networkType, localCandidates := range agent.localCandidates {
@@ -1263,7 +1241,7 @@ func (a *Agent) GetLocalCandidatesStats() []CandidateStats {
 
 // GetRemoteCandidatesStats returns a list of remote candidates stats
 func (a *Agent) GetRemoteCandidatesStats() []CandidateStats {
-	resultChan := make(chan []CandidateStats)
+	resultChan := make(chan []CandidateStats, 1)
 	err := a.run(func(agent *Agent) {
 		result := make([]CandidateStats, 0, len(agent.remoteCandidates))
 		for networkType, localCandidates := range agent.remoteCandidates {
@@ -1290,41 +1268,3 @@ func (a *Agent) GetRemoteCandidatesStats() []CandidateStats {
 	}
 	return <-resultChan
 }
-
-// Role represents ICE agent role, which can be controlling or controlled.
-type Role byte
-
-// UnmarshalText implements TextUnmarshaler.
-func (r *Role) UnmarshalText(text []byte) error {
-	switch string(text) {
-	case "controlling":
-		*r = Controlling
-	case "controlled":
-		*r = Controlled
-	default:
-		return fmt.Errorf("unknown role %q", text)
-	}
-	return nil
-}
-
-// MarshalText implements TextMarshaler.
-func (r Role) MarshalText() (text []byte, err error) {
-	return []byte(r.String()), nil
-}
-
-func (r Role) String() string {
-	switch r {
-	case Controlling:
-		return "controlling"
-	case Controlled:
-		return "controlled"
-	default:
-		return "unknown"
-	}
-}
-
-// Possible ICE agent roles.
-const (
-	Controlling Role = iota
-	Controlled
-)

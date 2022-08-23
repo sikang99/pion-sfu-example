@@ -36,11 +36,8 @@ func (h *handshakeMessageClientHello) Marshal() ([]byte, error) {
 	out[0] = h.version.major
 	out[1] = h.version.minor
 
-	rand, err := h.random.Marshal()
-	if err != nil {
-		return nil, err
-	}
-	copy(out[2:], rand)
+	rand := h.random.marshalFixed()
+	copy(out[2:], rand[:])
 
 	out = append(out, 0x00) // SessionID
 
@@ -65,19 +62,23 @@ func (h *handshakeMessageClientHello) Unmarshal(data []byte) error {
 	h.version.major = data[0]
 	h.version.minor = data[1]
 
-	if err := h.random.Unmarshal(data[2 : 2+handshakeRandomLength]); err != nil {
-		return err
-	}
+	var random [handshakeRandomLength]byte
+	copy(random[:], data[2:])
+	h.random.unmarshalFixed(random)
 
 	// rest of packet has variable width sections
 	currOffset := handshakeMessageClientHelloVariableWidthStart
 	currOffset += int(data[currOffset]) + 1 // SessionID
 
 	currOffset++
-	if len(data) < currOffset {
+	if len(data) <= currOffset {
 		return errBufferTooSmall
 	}
-	h.cookie = append([]byte{}, data[currOffset:currOffset+int(data[currOffset-1])]...)
+	n := int(data[currOffset-1])
+	if len(data) <= currOffset+n {
+		return errBufferTooSmall
+	}
+	h.cookie = append([]byte{}, data[currOffset:currOffset+n]...)
 	currOffset += len(h.cookie)
 
 	// Cipher Suites
@@ -114,6 +115,5 @@ func (h *handshakeMessageClientHello) Unmarshal(data []byte) error {
 		return err
 	}
 	h.extensions = extensions
-
 	return nil
 }

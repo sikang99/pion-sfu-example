@@ -115,12 +115,10 @@ func cipherSuiteForID(id CipherSuiteID) cipherSuite {
 // CipherSuites we support in order of preference
 func defaultCipherSuites() []cipherSuite {
 	return []cipherSuite{
-		&cipherSuiteTLSEcdheRsaWithAes256CbcSha{},
-		&cipherSuiteTLSEcdheEcdsaWithAes256CbcSha{},
-		&cipherSuiteTLSEcdheRsaWithAes128GcmSha256{},
 		&cipherSuiteTLSEcdheEcdsaWithAes128GcmSha256{},
-		newCipherSuiteTLSEcdheEcdsaWithAes128Ccm(),
-		newCipherSuiteTLSEcdheEcdsaWithAes128Ccm8(),
+		&cipherSuiteTLSEcdheRsaWithAes128GcmSha256{},
+		&cipherSuiteTLSEcdheEcdsaWithAes256CbcSha{},
+		&cipherSuiteTLSEcdheRsaWithAes256CbcSha{},
 	}
 }
 
@@ -156,14 +154,13 @@ func decodeCipherSuites(buf []byte) ([]cipherSuite, error) {
 	return rtrn, nil
 }
 
-func encodeCipherSuites(c []cipherSuite) []byte {
+func encodeCipherSuites(cipherSuites []cipherSuite) []byte {
 	out := []byte{0x00, 0x00}
-	binary.BigEndian.PutUint16(out[len(out)-2:], uint16(len(c)*2))
-	for i := len(c); i > 0; i-- {
+	binary.BigEndian.PutUint16(out[len(out)-2:], uint16(len(cipherSuites)*2))
+	for _, c := range cipherSuites {
 		out = append(out, []byte{0x00, 0x00}...)
-		binary.BigEndian.PutUint16(out[len(out)-2:], uint16(c[i-1].ID()))
+		binary.BigEndian.PutUint16(out[len(out)-2:], uint16(c.ID()))
 	}
-
 	return out
 }
 

@@ -71,7 +71,7 @@ func (s *controllingSelector) isNominatable(c Candidate) bool {
 
 func (s *controllingSelector) ContactCandidates() {
 	switch {
-	case s.agent.selectedPair != nil:
+	case s.agent.getSelectedPair() != nil:
 		if s.agent.validateSelectedPair() {
 			s.log.Trace("checking keepalive")
 			s.agent.checkKeepalive()
@@ -92,8 +92,6 @@ func (s *controllingSelector) ContactCandidates() {
 			s.nominatePair(p)
 			return
 		}
-
-		s.log.Trace("pinging all candidates")
 		s.agent.pingAllCandidates()
 	}
 }
@@ -132,7 +130,7 @@ func (s *controllingSelector) HandleBindingRequest(m *stun.Message, local, remot
 		return
 	}
 
-	if p.state == CandidatePairStateSucceeded && s.nominatedPair == nil && s.agent.selectedPair == nil {
+	if p.state == CandidatePairStateSucceeded && s.nominatedPair == nil && s.agent.getSelectedPair() == nil {
 		bestPair := s.agent.getBestAvailableCandidatePair()
 		if bestPair == nil {
 			s.log.Tracef("No best pair available\n")
@@ -172,7 +170,7 @@ func (s *controllingSelector) HandleSuccessResponse(m *stun.Message, local, remo
 
 	p.state = CandidatePairStateSucceeded
 	s.log.Tracef("Found valid candidate pair: %s", p)
-	if pendingRequest.isUseCandidate && s.agent.selectedPair == nil {
+	if pendingRequest.isUseCandidate && s.agent.getSelectedPair() == nil {
 		s.agent.setSelectedPair(p)
 	}
 }
@@ -205,7 +203,7 @@ func (s *controlledSelector) Start() {
 }
 
 func (s *controlledSelector) ContactCandidates() {
-	if s.agent.selectedPair != nil {
+	if s.agent.getSelectedPair() != nil {
 		if s.agent.validateSelectedPair() {
 			s.log.Trace("checking keepalive")
 			s.agent.checkKeepalive()
@@ -215,7 +213,6 @@ func (s *controlledSelector) ContactCandidates() {
 			s.log.Trace("check timeout reached and no valid candidate pair found, marking connection as failed")
 			s.agent.updateConnectionState(ConnectionStateFailed)
 		} else {
-			s.log.Trace("pinging all candidates")
 			s.agent.pingAllCandidates()
 		}
 	}
@@ -291,7 +288,7 @@ func (s *controlledSelector) HandleBindingRequest(m *stun.Message, local, remote
 			// previously sent by this pair produced a successful response and
 			// generated a valid pair (Section 7.2.5.3.2).  The agent sets the
 			// nominated flag value of the valid pair to true.
-			if s.agent.selectedPair == nil {
+			if selectedPair := s.agent.getSelectedPair(); selectedPair == nil {
 				s.agent.setSelectedPair(p)
 			}
 			s.agent.sendBindingSuccess(m, local, remote)
