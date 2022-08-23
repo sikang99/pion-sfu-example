@@ -94,7 +94,6 @@ func (s *SessionDescription) Unmarshal(value []byte) error {
 		}
 	}
 	return nil
-
 }
 
 func s1(l *lexer) (stateFn, error) {
@@ -368,6 +367,18 @@ func s14(l *lexer) (stateFn, error) {
 	switch key {
 	case "a=":
 		return unmarshalMediaAttribute, nil
+	case "k=":
+		// Non-spec ordering
+		return unmarshalMediaEncryptionKey, nil
+	case "b=":
+		// Non-spec ordering
+		return unmarshalMediaBandwidth, nil
+	case "c=":
+		// Non-spec ordering
+		return unmarshalMediaConnectionInformation, nil
+	case "i=":
+		// Non-spec ordering
+		return unmarshalMediaTitle, nil
 	case "m=":
 		return unmarshalMediaDescription, nil
 	}
@@ -391,6 +402,11 @@ func s15(l *lexer) (stateFn, error) {
 		return unmarshalMediaEncryptionKey, nil
 	case "b=":
 		return unmarshalMediaBandwidth, nil
+	case "c=":
+		return unmarshalMediaConnectionInformation, nil
+	case "i=":
+		// Non-spec ordering
+		return unmarshalMediaTitle, nil
 	case "m=":
 		return unmarshalMediaDescription, nil
 	}
@@ -416,6 +432,9 @@ func s16(l *lexer) (stateFn, error) {
 		return unmarshalMediaConnectionInformation, nil
 	case "b=":
 		return unmarshalMediaBandwidth, nil
+	case "i=":
+		// Non-spec ordering
+		return unmarshalMediaTitle, nil
 	case "m=":
 		return unmarshalMediaDescription, nil
 	}
@@ -431,7 +450,7 @@ func unmarshalProtocolVersion(l *lexer) (stateFn, error) {
 
 	version, err := strconv.ParseInt(value, 10, 32)
 	if err != nil {
-		return nil, fmt.Errorf("sdp: invalid numeric value `%v`", version)
+		return nil, fmt.Errorf("sdp: invalid numeric value `%v`", value)
 	}
 
 	// As off the latest draft of the rfc this value is required to be 0.

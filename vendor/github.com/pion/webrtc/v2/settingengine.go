@@ -8,6 +8,7 @@ import (
 
 	"github.com/pion/ice"
 	"github.com/pion/logging"
+	"github.com/pion/transport/vnet"
 )
 
 // SettingEngine allows influencing behavior in ways that are not
@@ -31,15 +32,21 @@ type SettingEngine struct {
 		ICERelayAcceptanceMinWait    *time.Duration
 	}
 	candidates struct {
-		ICELite                bool
-		ICETrickle             bool
-		ICENetworkTypes        []NetworkType
-		InterfaceFilter        func(string) bool
-		NAT1To1IPs             []string
-		NAT1To1IPCandidateType ICECandidateType
+		ICELite                        bool
+		ICETrickle                     bool
+		ICENetworkTypes                []NetworkType
+		InterfaceFilter                func(string) bool
+		NAT1To1IPs                     []string
+		NAT1To1IPCandidateType         ICECandidateType
+		GenerateMulticastDNSCandidates bool
+		MulticastDNSHostName           string
+		UsernameFragment               string
+		Password                       string
 	}
-	answeringDTLSRole DTLSRole
-	LoggerFactory     logging.LoggerFactory
+	answeringDTLSRole                         DTLSRole
+	disableCertificateFingerprintVerification bool
+	vnet                                      *vnet.Net
+	LoggerFactory                             logging.LoggerFactory
 }
 
 // DetachDataChannels enables detaching data channels. When enabled
@@ -162,4 +169,39 @@ func (e *SettingEngine) SetAnsweringDTLSRole(role DTLSRole) error {
 
 	e.answeringDTLSRole = role
 	return nil
+}
+
+// SetVNet sets the VNet instance that is passed to pion/ice
+//
+// VNet is a virtual network layer for Pion, allowing users to simulate
+// different topologies, latency, loss and jitter. This can be useful for
+// learning WebRTC concepts or testing your application in a lab environment
+func (e *SettingEngine) SetVNet(vnet *vnet.Net) {
+	e.vnet = vnet
+}
+
+// GenerateMulticastDNSCandidates instructs pion/ice to generate host candidates with mDNS hostnames instead of IP Addresses
+func (e *SettingEngine) GenerateMulticastDNSCandidates(generateMulticastDNSCandidates bool) {
+	e.candidates.GenerateMulticastDNSCandidates = generateMulticastDNSCandidates
+}
+
+// SetMulticastDNSHostName sets a static HostName to be used by pion/ice instead of generating one on startup
+//
+// This should only be used for a single PeerConnection. Having multiple PeerConnections with the same HostName will cause
+// undefined behavior
+func (e *SettingEngine) SetMulticastDNSHostName(hostName string) {
+	e.candidates.MulticastDNSHostName = hostName
+}
+
+// SetICECredentials sets a staic uFrag/uPwd to be used by pion/ice
+//
+// This is useful if you want to do signalless WebRTC session, or having a reproducible environment with static credentials
+func (e *SettingEngine) SetICECredentials(usernameFragment, password string) {
+	e.candidates.UsernameFragment = usernameFragment
+	e.candidates.Password = password
+}
+
+// DisableCertificateFingerprintVerification disables fingerprint verification after DTLS Handshake has finished
+func (e *SettingEngine) DisableCertificateFingerprintVerification(isDisabled bool) {
+	e.disableCertificateFingerprintVerification = isDisabled
 }

@@ -12,6 +12,7 @@ import (
 	"github.com/pion/datachannel"
 	"github.com/pion/logging"
 	"github.com/pion/sctp"
+	"github.com/pion/webrtc/v2/pkg/rtcerr"
 )
 
 const sctpMaxChannels = uint16(65535)
@@ -35,9 +36,17 @@ type SCTPTransport struct {
 
 	// OnStateChange  func()
 
+	onErrorHandler func(error)
+
 	association                *sctp.Association
 	onDataChannelHandler       func(*DataChannel)
 	onDataChannelOpenedHandler func(*DataChannel)
+
+	// DataChannels
+	dataChannels          []*DataChannel
+	dataChannelsOpened    uint32
+	dataChannelsRequested uint32
+	dataChannelsAccepted  uint32
 
 	api *API
 	log logging.LeveledLogger
@@ -79,21 +88,23 @@ func (r *SCTPTransport) GetCapabilities() SCTPCapabilities {
 // create an SCTPTransport, SCTP SO (Simultaneous Open) is used to establish
 // a connection over SCTP.
 func (r *SCTPTransport) Start(remoteCaps SCTPCapabilities) error {
-	r.lock.Lock()
-	defer r.lock.Unlock()
-
 	if err := r.ensureDTLS(); err != nil {
 		return err
 	}
 
 	sctpAssociation, err := sctp.Client(sctp.Config{
-		NetConn:       r.dtlsTransport.conn,
+		NetConn:       r.Transport().conn,
 		LoggerFactory: r.api.settingEngine.LoggerFactory,
 	})
 	if err != nil {
 		return err
 	}
+
+	r.lock.Lock()
+	defer r.lock.Unlock()
+
 	r.association = sctpAssociation
+	r.state = SCTPTransportStateConnected
 
 	go r.acceptDataChannels(sctpAssociation)
 
@@ -119,8 +130,8 @@ func (r *SCTPTransport) Stop() error {
 }
 
 func (r *SCTPTransport) ensureDTLS() error {
-	if r.dtlsTransport == nil ||
-		r.dtlsTransport.conn == nil {
+	dtlsTransport := r.Transport()
+	if dtlsTransport == nil || dtlsTransport.conn == nil {
 		return errors.New("DTLS not established")
 	}
 
@@ -135,7 +146,7 @@ func (r *SCTPTransport) acceptDataChannels(a *sctp.Association) {
 		if err != nil {
 			if err != io.EOF {
 				r.log.Errorf("Failed to accept data channel: %v", err)
-				// pion/webrtc#754
+				r.onError(err)
 			}
 			return
 		}
@@ -167,7 +178,7 @@ func (r *SCTPTransport) acceptDataChannels(a *sctp.Association) {
 
 		sid := dc.StreamIdentifier()
 		rtcDC, err := r.api.newDataChannel(&DataChannelParameters{
-			ID:                sid,
+			ID:                &sid,
 			Label:             dc.Config.Label,
 			Protocol:          dc.Config.Protocol,
 			Negotiated:        dc.Config.Negotiated,
@@ -178,7 +189,7 @@ func (r *SCTPTransport) acceptDataChannels(a *sctp.Association) {
 
 		if err != nil {
 			r.log.Errorf("Failed to accept data channel: %v", err)
-			// pion/webrtc#754
+			r.onError(err)
 			return
 		}
 
@@ -186,12 +197,31 @@ func (r *SCTPTransport) acceptDataChannels(a *sctp.Association) {
 		rtcDC.handleOpen(dc)
 
 		r.lock.Lock()
+		r.dataChannelsOpened++
 		dcOpenedHdlr := r.onDataChannelOpenedHandler
 		r.lock.Unlock()
 
 		if dcOpenedHdlr != nil {
 			dcOpenedHdlr(rtcDC)
 		}
+	}
+}
+
+// OnError sets an event handler which is invoked when
+// the SCTP connection error occurs.
+func (r *SCTPTransport) OnError(f func(err error)) {
+	r.lock.Lock()
+	defer r.lock.Unlock()
+	r.onErrorHandler = f
+}
+
+func (r *SCTPTransport) onError(err error) {
+	r.lock.RLock()
+	hdlr := r.onErrorHandler
+	r.lock.RUnlock()
+
+	if hdlr != nil {
+		go hdlr(err)
 	}
 }
 
@@ -213,6 +243,8 @@ func (r *SCTPTransport) OnDataChannelOpened(f func(*DataChannel)) {
 
 func (r *SCTPTransport) onDataChannel(dc *DataChannel) (done chan struct{}) {
 	r.lock.Lock()
+	r.dataChannels = append(r.dataChannels, dc)
+	r.dataChannelsAccepted++
 	hdlr := r.onDataChannelHandler
 	r.lock.Unlock()
 
@@ -282,7 +314,7 @@ func (r *SCTPTransport) MaxChannels() uint16 {
 // State returns the current state of the SCTPTransport
 func (r *SCTPTransport) State() SCTPTransportState {
 	r.lock.RLock()
-	defer r.lock.RLock()
+	defer r.lock.RUnlock()
 	return r.state
 }
 
@@ -305,4 +337,33 @@ func (r *SCTPTransport) collectStats(collector *statsReportCollector) {
 	}
 
 	collector.Collect(stats.ID, stats)
+}
+
+func (r *SCTPTransport) generateDataChannelID(dtlsRole DTLSRole) (uint16, error) {
+	isChannelWithID := func(id uint16) bool {
+		for _, d := range r.dataChannels {
+			if d.id != nil && *d.id == id {
+				return true
+			}
+		}
+		return false
+	}
+
+	var id uint16
+	if dtlsRole != DTLSRoleClient {
+		id++
+	}
+
+	max := r.MaxChannels()
+
+	r.lock.RLock()
+	defer r.lock.RUnlock()
+	for ; id < max-1; id += 2 {
+		if isChannelWithID(id) {
+			continue
+		}
+		return id, nil
+	}
+
+	return 0, &rtcerr.OperationError{Err: ErrMaxDataChannelID}
 }

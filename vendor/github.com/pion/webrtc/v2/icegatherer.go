@@ -4,7 +4,6 @@ package webrtc
 
 import (
 	"sync"
-	"time"
 
 	"github.com/pion/ice"
 	"github.com/pion/logging"
@@ -16,55 +15,24 @@ import (
 // exchanged in signaling.
 type ICEGatherer struct {
 	lock  sync.RWMutex
+	log   logging.LeveledLogger
 	state ICEGathererState
 
 	validatedServers []*ice.URL
+	gatherPolicy     ICETransportPolicy
 
-	agentIsTrickle bool
-	lite           bool
-	agent          *ice.Agent
-
-	portMin                   uint16
-	portMax                   uint16
-	candidateTypes            []ice.CandidateType
-	connectionTimeout         *time.Duration
-	keepaliveInterval         *time.Duration
-	candidateSelectionTimeout *time.Duration
-	hostAcceptanceMinWait     *time.Duration
-	srflxAcceptanceMinWait    *time.Duration
-	prflxAcceptanceMinWait    *time.Duration
-	relayAcceptanceMinWait    *time.Duration
-	loggerFactory             logging.LoggerFactory
-	log                       logging.LeveledLogger
-	networkTypes              []NetworkType
-	interfaceFilter           func(string) bool
-	nat1To1IPs                []string
-	nat1To1IPCandidateType    ice.CandidateType
+	agent *ice.Agent
 
 	onLocalCandidateHdlr func(candidate *ICECandidate)
 	onStateChangeHdlr    func(state ICEGathererState)
+
+	api *API
 }
 
 // NewICEGatherer creates a new NewICEGatherer.
-func NewICEGatherer(
-	portMin uint16,
-	portMax uint16,
-	connectionTimeout,
-	keepaliveInterval,
-	candidateSelectionTimeout,
-	hostAcceptanceMinWait,
-	srflxAcceptanceMinWait,
-	prflxAcceptanceMinWait,
-	relayAcceptanceMinWait *time.Duration,
-	loggerFactory logging.LoggerFactory,
-	agentIsTrickle bool,
-	lite bool,
-	networkTypes []NetworkType,
-	interfaceFilter func(string) bool,
-	nat1To1IPs []string,
-	nat1To1IPCandidateType ICECandidateType,
-	opts ICEGatherOptions,
-) (*ICEGatherer, error) {
+// This constructor is part of the ORTC API. It is not
+// meant to be used together with the basic WebRTC API.
+func (api *API) NewICEGatherer(opts ICEGatherOptions) (*ICEGatherer, error) {
 	var validatedServers []*ice.URL
 	if len(opts.ICEServers) > 0 {
 		for _, server := range opts.ICEServers {
@@ -76,44 +44,12 @@ func NewICEGatherer(
 		}
 	}
 
-	candidateTypes := []ice.CandidateType{}
-	if lite {
-		candidateTypes = append(candidateTypes, ice.CandidateTypeHost)
-	} else if opts.ICEGatherPolicy == ICETransportPolicyRelay {
-		candidateTypes = append(candidateTypes, ice.CandidateTypeRelay)
-	}
-
-	var nat1To1CandiTyp ice.CandidateType
-	switch nat1To1IPCandidateType {
-	case ICECandidateTypeHost:
-		nat1To1CandiTyp = ice.CandidateTypeHost
-	case ICECandidateTypeSrflx:
-		nat1To1CandiTyp = ice.CandidateTypeServerReflexive
-	default:
-		nat1To1CandiTyp = ice.CandidateTypeUnspecified
-	}
-
 	return &ICEGatherer{
-		state:                     ICEGathererStateNew,
-		validatedServers:          validatedServers,
-		portMin:                   portMin,
-		portMax:                   portMax,
-		connectionTimeout:         connectionTimeout,
-		keepaliveInterval:         keepaliveInterval,
-		loggerFactory:             loggerFactory,
-		log:                       loggerFactory.NewLogger("ice"),
-		agentIsTrickle:            agentIsTrickle,
-		lite:                      lite,
-		networkTypes:              networkTypes,
-		candidateTypes:            candidateTypes,
-		candidateSelectionTimeout: candidateSelectionTimeout,
-		hostAcceptanceMinWait:     hostAcceptanceMinWait,
-		srflxAcceptanceMinWait:    srflxAcceptanceMinWait,
-		prflxAcceptanceMinWait:    prflxAcceptanceMinWait,
-		relayAcceptanceMinWait:    relayAcceptanceMinWait,
-		interfaceFilter:           interfaceFilter,
-		nat1To1IPs:                nat1To1IPs,
-		nat1To1IPCandidateType:    nat1To1CandiTyp,
+		state:            ICEGathererStateNew,
+		gatherPolicy:     opts.ICEGatherPolicy,
+		validatedServers: validatedServers,
+		api:              api,
+		log:              api.settingEngine.LoggerFactory.NewLogger("ice"),
 	}, nil
 }
 
@@ -125,27 +61,54 @@ func (g *ICEGatherer) createAgent() error {
 		return nil
 	}
 
-	config := &ice.AgentConfig{
-		Trickle:                   g.agentIsTrickle,
-		Lite:                      g.lite,
-		Urls:                      g.validatedServers,
-		PortMin:                   g.portMin,
-		PortMax:                   g.portMax,
-		ConnectionTimeout:         g.connectionTimeout,
-		KeepaliveInterval:         g.keepaliveInterval,
-		LoggerFactory:             g.loggerFactory,
-		CandidateTypes:            g.candidateTypes,
-		CandidateSelectionTimeout: g.candidateSelectionTimeout,
-		HostAcceptanceMinWait:     g.hostAcceptanceMinWait,
-		SrflxAcceptanceMinWait:    g.srflxAcceptanceMinWait,
-		PrflxAcceptanceMinWait:    g.prflxAcceptanceMinWait,
-		RelayAcceptanceMinWait:    g.relayAcceptanceMinWait,
-		InterfaceFilter:           g.interfaceFilter,
-		NAT1To1IPs:                g.nat1To1IPs,
-		NAT1To1IPCandidateType:    g.nat1To1IPCandidateType,
+	candidateTypes := []ice.CandidateType{}
+	if g.api.settingEngine.candidates.ICELite {
+		candidateTypes = append(candidateTypes, ice.CandidateTypeHost)
+	} else if g.gatherPolicy == ICETransportPolicyRelay {
+		candidateTypes = append(candidateTypes, ice.CandidateTypeRelay)
 	}
 
-	requestedNetworkTypes := g.networkTypes
+	var nat1To1CandiTyp ice.CandidateType
+	switch g.api.settingEngine.candidates.NAT1To1IPCandidateType {
+	case ICECandidateTypeHost:
+		nat1To1CandiTyp = ice.CandidateTypeHost
+	case ICECandidateTypeSrflx:
+		nat1To1CandiTyp = ice.CandidateTypeServerReflexive
+	default:
+		nat1To1CandiTyp = ice.CandidateTypeUnspecified
+	}
+
+	var multicastDNSMode ice.MulticastDNSMode
+	if g.api.settingEngine.candidates.GenerateMulticastDNSCandidates {
+		multicastDNSMode = ice.MulticastDNSModeQueryAndGather
+	}
+
+	config := &ice.AgentConfig{
+		Trickle:                   g.api.settingEngine.candidates.ICETrickle,
+		Lite:                      g.api.settingEngine.candidates.ICELite,
+		Urls:                      g.validatedServers,
+		PortMin:                   g.api.settingEngine.ephemeralUDP.PortMin,
+		PortMax:                   g.api.settingEngine.ephemeralUDP.PortMax,
+		ConnectionTimeout:         g.api.settingEngine.timeout.ICEConnection,
+		KeepaliveInterval:         g.api.settingEngine.timeout.ICEKeepalive,
+		LoggerFactory:             g.api.settingEngine.LoggerFactory,
+		CandidateTypes:            candidateTypes,
+		CandidateSelectionTimeout: g.api.settingEngine.timeout.ICECandidateSelectionTimeout,
+		HostAcceptanceMinWait:     g.api.settingEngine.timeout.ICEHostAcceptanceMinWait,
+		SrflxAcceptanceMinWait:    g.api.settingEngine.timeout.ICESrflxAcceptanceMinWait,
+		PrflxAcceptanceMinWait:    g.api.settingEngine.timeout.ICEPrflxAcceptanceMinWait,
+		RelayAcceptanceMinWait:    g.api.settingEngine.timeout.ICERelayAcceptanceMinWait,
+		InterfaceFilter:           g.api.settingEngine.candidates.InterfaceFilter,
+		NAT1To1IPs:                g.api.settingEngine.candidates.NAT1To1IPs,
+		NAT1To1IPCandidateType:    nat1To1CandiTyp,
+		Net:                       g.api.settingEngine.vnet,
+		MulticastDNSMode:          multicastDNSMode,
+		MulticastDNSHostName:      g.api.settingEngine.candidates.MulticastDNSHostName,
+		LocalUfrag:                g.api.settingEngine.candidates.UsernameFragment,
+		LocalPwd:                  g.api.settingEngine.candidates.Password,
+	}
+
+	requestedNetworkTypes := g.api.settingEngine.candidates.ICENetworkTypes
 	if len(requestedNetworkTypes) == 0 {
 		requestedNetworkTypes = supportedNetworkTypes()
 	}
@@ -160,7 +123,7 @@ func (g *ICEGatherer) createAgent() error {
 	}
 
 	g.agent = agent
-	if !g.agentIsTrickle {
+	if !g.api.settingEngine.candidates.ICETrickle {
 		g.state = ICEGathererStateComplete
 	}
 
@@ -174,14 +137,15 @@ func (g *ICEGatherer) Gather() error {
 	}
 
 	g.lock.Lock()
+	defer g.lock.Unlock()
+
 	onLocalCandidateHdlr := g.onLocalCandidateHdlr
 	if onLocalCandidateHdlr == nil {
 		onLocalCandidateHdlr = func(*ICECandidate) {}
 	}
 
-	isTrickle := g.agentIsTrickle
+	isTrickle := g.api.settingEngine.candidates.ICETrickle
 	agent := g.agent
-	g.lock.Unlock()
 
 	if !isTrickle {
 		return nil
@@ -197,7 +161,10 @@ func (g *ICEGatherer) Gather() error {
 			}
 			onLocalCandidateHdlr(&c)
 		} else {
+			g.lock.Lock()
 			g.setState(ICEGathererStateComplete)
+			g.lock.Unlock()
+
 			onLocalCandidateHdlr(nil)
 		}
 	}); err != nil {
@@ -213,13 +180,12 @@ func (g *ICEGatherer) Close() error {
 
 	if g.agent == nil {
 		return nil
-	}
-
-	err := g.agent.Close()
-	if err != nil {
+	} else if err := g.agent.Close(); err != nil {
 		return err
 	}
+
 	g.agent = nil
+	g.setState(ICEGathererStateClosed)
 
 	return nil
 }
@@ -273,12 +239,8 @@ func (g *ICEGatherer) State() ICEGathererState {
 }
 
 func (g *ICEGatherer) setState(s ICEGathererState) {
-	g.lock.Lock()
 	g.state = s
-	hdlr := g.onStateChangeHdlr
-	g.lock.Unlock()
-
-	if hdlr != nil {
+	if hdlr := g.onStateChangeHdlr; hdlr != nil {
 		go hdlr(s)
 	}
 }
@@ -315,10 +277,14 @@ func (g *ICEGatherer) SignalCandidates() error {
 }
 
 func (g *ICEGatherer) collectStats(collector *statsReportCollector) {
-	collector.Collecting()
+	agent := g.getAgent()
+	if agent == nil {
+		return
+	}
 
-	go func(collector *statsReportCollector) {
-		for _, candidatePairStats := range g.agent.GetCandidatePairsStats() {
+	collector.Collecting()
+	go func(collector *statsReportCollector, agent *ice.Agent) {
+		for _, candidatePairStats := range agent.GetCandidatePairsStats() {
 			collector.Collecting()
 
 			state, err := toStatsICECandidatePairState(candidatePairStats.State)
@@ -364,7 +330,7 @@ func (g *ICEGatherer) collectStats(collector *statsReportCollector) {
 			collector.Collect(stats.ID, stats)
 		}
 
-		for _, candidateStats := range g.agent.GetLocalCandidatesStats() {
+		for _, candidateStats := range agent.GetLocalCandidatesStats() {
 			collector.Collecting()
 
 			networkType, err := getNetworkType(candidateStats.NetworkType)
@@ -394,7 +360,7 @@ func (g *ICEGatherer) collectStats(collector *statsReportCollector) {
 			collector.Collect(stats.ID, stats)
 		}
 
-		for _, candidateStats := range g.agent.GetRemoteCandidatesStats() {
+		for _, candidateStats := range agent.GetRemoteCandidatesStats() {
 			collector.Collecting()
 			networkType, err := getNetworkType(candidateStats.NetworkType)
 			if err != nil {
@@ -422,5 +388,5 @@ func (g *ICEGatherer) collectStats(collector *statsReportCollector) {
 			collector.Collect(stats.ID, stats)
 		}
 		collector.Done()
-	}(collector)
+	}(collector, agent)
 }

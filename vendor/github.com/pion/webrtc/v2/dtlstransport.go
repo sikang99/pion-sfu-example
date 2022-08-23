@@ -6,6 +6,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/tls"
 	"crypto/x509"
 	"errors"
 	"fmt"
@@ -13,7 +14,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/pion/dtls"
+	"github.com/pion/dtls/v2"
+	"github.com/pion/dtls/v2/pkg/crypto/fingerprint"
 	"github.com/pion/srtp"
 	"github.com/pion/webrtc/v2/internal/mux"
 	"github.com/pion/webrtc/v2/internal/util"
@@ -231,61 +233,87 @@ func (t *DTLSTransport) role() DTLSRole {
 
 // Start DTLS transport negotiation with the parameters of the remote DTLS transport
 func (t *DTLSTransport) Start(remoteParameters DTLSParameters) error {
-	t.lock.Lock()
-	defer t.lock.Unlock()
+	// Take lock and prepare connection, we must not hold the lock
+	// when connecting
+	prepareTransport := func() (DTLSRole, *dtls.Config, error) {
+		t.lock.Lock()
+		defer t.lock.Unlock()
 
-	if err := t.ensureICEConn(); err != nil {
+		if err := t.ensureICEConn(); err != nil {
+			return DTLSRole(0), nil, err
+		}
+
+		if t.state != DTLSTransportStateNew {
+			return DTLSRole(0), nil, &rtcerr.InvalidStateError{Err: fmt.Errorf("attempted to start DTLSTransport that is not in new state: %s", t.state)}
+		}
+
+		t.srtpEndpoint = t.iceTransport.NewEndpoint(mux.MatchSRTP)
+		t.srtcpEndpoint = t.iceTransport.NewEndpoint(mux.MatchSRTCP)
+		t.remoteParameters = remoteParameters
+
+		// pion/webrtc#753
+		cert := t.certificates[0]
+		t.onStateChange(DTLSTransportStateConnecting)
+
+		return t.role(), &dtls.Config{
+			Certificates: []tls.Certificate{
+				{
+					Certificate: [][]byte{cert.x509Cert.Raw},
+					PrivateKey:  cert.privateKey,
+				}},
+			SRTPProtectionProfiles: []dtls.SRTPProtectionProfile{dtls.SRTP_AES128_CM_HMAC_SHA1_80},
+			ClientAuth:             dtls.RequireAnyClientCert,
+			LoggerFactory:          t.api.settingEngine.LoggerFactory,
+			InsecureSkipVerify:     true,
+		}, nil
+	}
+
+	var dtlsConn *dtls.Conn
+	dtlsEndpoint := t.iceTransport.NewEndpoint(mux.MatchDTLS)
+	role, dtlsConfig, err := prepareTransport()
+	if err != nil {
 		return err
 	}
 
-	if t.state != DTLSTransportStateNew {
-		return &rtcerr.InvalidStateError{Err: fmt.Errorf("attempted to start DTLSTransport that is not in new state: %s", t.state)}
-	}
-
-	dtlsEndpoint := t.iceTransport.NewEndpoint(mux.MatchDTLS)
-	t.srtpEndpoint = t.iceTransport.NewEndpoint(mux.MatchSRTP)
-	t.srtcpEndpoint = t.iceTransport.NewEndpoint(mux.MatchSRTCP)
-	t.remoteParameters = remoteParameters
-
-	// pion/webrtc#753
-	cert := t.certificates[0]
-
-	dtlsConfig := &dtls.Config{
-		Certificate:            cert.x509Cert,
-		PrivateKey:             cert.privateKey,
-		SRTPProtectionProfiles: []dtls.SRTPProtectionProfile{dtls.SRTP_AES128_CM_HMAC_SHA1_80},
-		ClientAuth:             dtls.RequireAnyClientCert,
-		LoggerFactory:          t.api.settingEngine.LoggerFactory,
-		InsecureSkipVerify:     true,
-	}
-
-	t.onStateChange(DTLSTransportStateConnecting)
-	if t.role() == DTLSRoleClient {
-		dtlsConn, err := dtls.Client(dtlsEndpoint, dtlsConfig)
-		if err != nil {
-			t.onStateChange(DTLSTransportStateFailed)
-			return err
-		}
-		t.conn = dtlsConn
+	// Connect as DTLS Client/Server, function is blocking and we
+	// must not hold the DTLSTransport lock
+	if role == DTLSRoleClient {
+		dtlsConn, err = dtls.Client(dtlsEndpoint, dtlsConfig)
 	} else {
-		dtlsConn, err := dtls.Server(dtlsEndpoint, dtlsConfig)
-		if err != nil {
-			t.onStateChange(DTLSTransportStateFailed)
-			return err
-		}
-		t.conn = dtlsConn
+		dtlsConn, err = dtls.Server(dtlsEndpoint, dtlsConfig)
 	}
+
+	// Re-take the lock, nothing beyond here is blocking
+	t.lock.Lock()
+	defer t.lock.Unlock()
+
+	if err != nil {
+		t.onStateChange(DTLSTransportStateFailed)
+		return err
+	}
+
+	t.conn = dtlsConn
 	t.onStateChange(DTLSTransportStateConnected)
 
+	if t.api.settingEngine.disableCertificateFingerprintVerification {
+		return nil
+	}
+
 	// Check the fingerprint if a certificate was exchanged
-	remoteCert := t.conn.RemoteCertificate()
-	if remoteCert == nil {
+	remoteCerts := t.conn.RemoteCertificate()
+	if len(remoteCerts) == 0 {
 		t.onStateChange(DTLSTransportStateFailed)
 		return fmt.Errorf("peer didn't provide certificate via DTLS")
 	}
+	t.remoteCertificate = remoteCerts[0]
 
-	t.remoteCertificate = remoteCert.Raw
-	err := t.validateFingerPrint(remoteCert)
+	parsedRemoteCert, err := x509.ParseCertificate(t.remoteCertificate)
+	if err != nil {
+		t.onStateChange(DTLSTransportStateFailed)
+		return err
+	}
+
+	err = t.validateFingerPrint(parsedRemoteCert)
 	if err != nil {
 		t.onStateChange(DTLSTransportStateFailed)
 	}
@@ -323,12 +351,12 @@ func (t *DTLSTransport) Stop() error {
 
 func (t *DTLSTransport) validateFingerPrint(remoteCert *x509.Certificate) error {
 	for _, fp := range t.remoteParameters.Fingerprints {
-		hashAlgo, err := dtls.HashAlgorithmString(fp.Algorithm)
+		hashAlgo, err := fingerprint.HashFromString(fp.Algorithm)
 		if err != nil {
 			return err
 		}
 
-		remoteValue, err := dtls.Fingerprint(remoteCert, hashAlgo)
+		remoteValue, err := fingerprint.Fingerprint(remoteCert, hashAlgo)
 		if err != nil {
 			return err
 		}
@@ -342,8 +370,7 @@ func (t *DTLSTransport) validateFingerPrint(remoteCert *x509.Certificate) error 
 }
 
 func (t *DTLSTransport) ensureICEConn() error {
-	if t.iceTransport == nil ||
-		t.iceTransport.State() == ICETransportStateNew {
+	if t.iceTransport == nil || t.iceTransport.State() == ICETransportStateNew {
 		return errors.New("ICE connection not started")
 	}
 

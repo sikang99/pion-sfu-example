@@ -185,12 +185,22 @@ type AgentConfig struct {
 	PortMin uint16
 	PortMax uint16
 
+	// LocalUfrag and LocalPwd values used to perform connectivity
+	// checks.  The values MUST be unguessable, with at least 128 bits of
+	// random number generator output used to generate the password, and
+	// at least 24 bits of output to generate the username fragment.
+	LocalUfrag string
+	LocalPwd   string
+
 	// Trickle specifies whether or not ice agent should trickle candidates or
 	// work perform synchronous gathering.
 	Trickle bool
 
 	// MulticastDNSMode controls mDNS behavior for the ICE agent
 	MulticastDNSMode MulticastDNSMode
+
+	// MulticastDNSHostName controls the hostname for this agent. If none is specified a random one will be generated
+	MulticastDNSHostName string
 
 	// ConnectionTimeout defaults to 30 seconds when this property is nil.
 	// If the duration is 0, we will never timeout this connection.
@@ -306,13 +316,40 @@ func createMulticastDNS(mDNSMode MulticastDNSMode, mDNSName string, log logging.
 
 // NewAgent creates a new Agent
 func NewAgent(config *AgentConfig) (*Agent, error) {
+	var err error
 	if config.PortMax < config.PortMin {
 		return nil, ErrPort
 	}
 
-	mDNSName, err := generateMulticastDNSName()
-	if err != nil {
-		return nil, err
+	// local username fragment and password
+	localUfrag := randSeq(16)
+	localPwd := randSeq(32)
+
+	if config.LocalUfrag != "" {
+		if len([]rune(config.LocalUfrag))*8 < 24 {
+			return nil, ErrLocalUfragInsufficientBits
+		}
+
+		localUfrag = config.LocalUfrag
+	}
+
+	if config.LocalPwd != "" {
+		if len([]rune(config.LocalPwd))*8 < 128 {
+			return nil, ErrLocalPwdInsufficientBits
+		}
+
+		localPwd = config.LocalPwd
+	}
+
+	mDNSName := config.MulticastDNSHostName
+	if mDNSName == "" {
+		if mDNSName, err = generateMulticastDNSName(); err != nil {
+			return nil, err
+		}
+	}
+
+	if !strings.HasSuffix(mDNSName, ".local") || len(strings.Split(mDNSName, ".")) != 2 {
+		return nil, ErrInvalidMulticastDNSHostName
 	}
 
 	mDNSMode := config.MulticastDNSMode
@@ -331,6 +368,13 @@ func NewAgent(config *AgentConfig) (*Agent, error) {
 	if err != nil {
 		return nil, err
 	}
+	closeMDNSConn := func() {
+		if mDNSConn != nil {
+			if mdnsCloseErr := mDNSConn.Close(); mdnsCloseErr != nil {
+				log.Warnf("Failed to close mDNS: %v", mdnsCloseErr)
+			}
+		}
+	}
 
 	a := &Agent{
 		tieBreaker:             rand.New(rand.NewSource(time.Now().UnixNano())).Uint64(),
@@ -343,19 +387,18 @@ func NewAgent(config *AgentConfig) (*Agent, error) {
 		checklist:              make([]*candidatePair, 0),
 		urls:                   config.Urls,
 		networkTypes:           config.NetworkTypes,
-
-		localUfrag:    randSeq(16),
-		localPwd:      randSeq(32),
-		taskChan:      make(chan task),
-		onConnected:   make(chan struct{}),
-		buffer:        packetio.NewBuffer(),
-		done:          make(chan struct{}),
-		portmin:       config.PortMin,
-		portmax:       config.PortMax,
-		trickle:       config.Trickle,
-		loggerFactory: loggerFactory,
-		log:           log,
-		net:           config.Net,
+		localUfrag:             localUfrag,
+		localPwd:               localPwd,
+		taskChan:               make(chan task),
+		onConnected:            make(chan struct{}),
+		buffer:                 packetio.NewBuffer(),
+		done:                   make(chan struct{}),
+		portmin:                config.PortMin,
+		portmax:                config.PortMax,
+		trickle:                config.Trickle,
+		loggerFactory:          loggerFactory,
+		log:                    log,
+		net:                    config.Net,
 
 		mDNSMode: mDNSMode,
 		mDNSName: mDNSName,
@@ -384,14 +427,17 @@ func NewAgent(config *AgentConfig) (*Agent, error) {
 	a.buffer.SetLimitSize(maxBufferSize)
 
 	if a.lite && (len(a.candidateTypes) != 1 || a.candidateTypes[0] != CandidateTypeHost) {
+		closeMDNSConn()
 		return nil, ErrLiteUsingNonHostCandidates
 	}
 
 	if config.Urls != nil && len(config.Urls) > 0 && !containsCandidateType(CandidateTypeServerReflexive, a.candidateTypes) && !containsCandidateType(CandidateTypeRelay, a.candidateTypes) {
+		closeMDNSConn()
 		return nil, ErrUselessUrlsProvided
 	}
 
 	if err = a.initExtIPMapping(config); err != nil {
+		closeMDNSConn()
 		return nil, err
 	}
 
@@ -491,7 +537,6 @@ func (a *Agent) initExtIPMapping(config *AgentConfig) error {
 		if !candiHostEnabled {
 			return ErrIneffectiveNAT1To1IPMappingHost
 		}
-
 	} else if a.extIPMapper.candidateType == CandidateTypeServerReflexive {
 		candiSrflxEnabled := false
 		for _, candiType := range a.candidateTypes {
@@ -610,7 +655,6 @@ func (a *Agent) setSelectedPair(p *candidatePair) {
 
 func (a *Agent) pingAllCandidates() {
 	for _, p := range a.checklist {
-
 		if p.state == CandidatePairStateWaiting {
 			p.state = CandidatePairStateInProgress
 		} else if p.state != CandidatePairStateInProgress {
@@ -708,6 +752,7 @@ func (a *Agent) taskLoop() {
 			}
 		} else {
 			select {
+			case <-a.forceCandidateContact:
 			case t := <-a.taskChan:
 				// Run the task
 				t(a)
@@ -802,7 +847,6 @@ func (a *Agent) resolveAndAddMulticastCandidate(c *CandidateHost) {
 	}); err != nil {
 		a.log.Warnf("Failed to add mDNS candidate %s: %v", c.Address(), err)
 		return
-
 	}
 }
 
@@ -852,6 +896,8 @@ func (a *Agent) addCandidate(c Candidate) {
 			a.addPair(c, remoteCandidate)
 		}
 	}
+
+	a.requestConnectivityCheck()
 }
 
 // GetLocalCandidates returns the local candidates

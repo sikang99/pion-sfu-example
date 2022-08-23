@@ -14,7 +14,7 @@ import (
 	"math/big"
 	"time"
 
-	"github.com/pion/dtls"
+	"github.com/pion/dtls/v2/pkg/crypto/fingerprint"
 	"github.com/pion/webrtc/v2/pkg/rtcerr"
 )
 
@@ -94,17 +94,21 @@ func (c Certificate) Expires() time.Time {
 // GetFingerprints returns the list of certificate fingerprints, one of which
 // is computed with the digest algorithm used in the certificate signature.
 func (c Certificate) GetFingerprints() ([]DTLSFingerprint, error) {
-	fingerprintAlgorithms := []dtls.HashAlgorithm{dtls.HashAlgorithmSHA256}
+	fingerprintAlgorithms := []crypto.Hash{crypto.SHA256}
 	res := make([]DTLSFingerprint, len(fingerprintAlgorithms))
 
 	i := 0
 	for _, algo := range fingerprintAlgorithms {
-		value, err := dtls.Fingerprint(c.x509Cert, algo)
+		name, err := fingerprint.StringFromHash(algo)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create fingerprint: %v", err)
+		}
+		value, err := fingerprint.Fingerprint(c.x509Cert, algo)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create fingerprint: %v", err)
 		}
 		res[i] = DTLSFingerprint{
-			Algorithm: algo.String(),
+			Algorithm: name,
 			Value:     value,
 		}
 	}
@@ -145,4 +149,11 @@ func GenerateCertificate(secretKey crypto.PrivateKey) (*Certificate, error) {
 		Subject:               pkix.Name{CommonName: hex.EncodeToString(origin)},
 		IsCA:                  true,
 	})
+}
+
+// CertificateFromX509 creates a new WebRTC Certificate from a given PrivateKey and Certificate
+//
+// This can be used if you want to share a certificate across multiple PeerConnections
+func CertificateFromX509(privateKey crypto.PrivateKey, certificate *x509.Certificate) Certificate {
+	return Certificate{privateKey, certificate}
 }

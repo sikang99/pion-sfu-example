@@ -21,6 +21,14 @@ var (
 	// ErrPort indicates malformed port is provided.
 	ErrPort = errors.New("invalid port")
 
+	// ErrLocalUfragInsufficientBits indicates local username fragment insufficient bits are provided.
+	// Have to be at least 24 bits long
+	ErrLocalUfragInsufficientBits = errors.New("local username fragment is less than 24 bits long")
+
+	// ErrLocalPwdInsufficientBits indicates local passoword insufficient bits are provided.
+	// Have to be at least 128 bits long
+	ErrLocalPwdInsufficientBits = errors.New("local password is less than 128 bits long")
+
 	// ErrProtoType indicates an unsupported transport type was provided.
 	ErrProtoType = errors.New("invalid transport protocol type")
 
@@ -86,4 +94,7 @@ var (
 	// ErrIneffectiveNAT1To1IPMappingSrflx indicates that 1:1 NAT IP mapping for srflx candidate is
 	// requested, but the srflx candidate type is disabled.
 	ErrIneffectiveNAT1To1IPMappingSrflx = errors.New("1:1 NAT IP mapping for srflx candidate ineffective")
+
+	// ErrInvalidMulticastDNSHostName indicates an invalid MulticastDNSHostName
+	ErrInvalidMulticastDNSHostName = errors.New("invalid mDNS HostName, must end with .local and can only contain a single '.'")
 )

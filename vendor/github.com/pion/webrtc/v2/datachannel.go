@@ -8,6 +8,7 @@ import (
 	"io"
 	"math"
 	"sync"
+	"time"
 
 	"github.com/pion/datachannel"
 	"github.com/pion/logging"
@@ -23,6 +24,7 @@ var errSCTPNotEstablished = errors.New("SCTP not established")
 type DataChannel struct {
 	mu sync.RWMutex
 
+	statsID                    string
 	label                      string
 	ordered                    bool
 	maxPacketLifeTime          *uint16
@@ -32,6 +34,7 @@ type DataChannel struct {
 	id                         *uint16
 	readyState                 DataChannelState
 	bufferedAmountLowThreshold uint64
+	detachCalled               bool
 
 	// The binaryType represents attribute MUST, on getting, return the value to
 	// which it was last set. On setting, if the new value is either the string
@@ -42,7 +45,6 @@ type DataChannel struct {
 	// binaryType                 string
 
 	onMessageHandler    func(DataChannelMessage)
-	onceMutex           sync.Mutex
 	openHandlerOnce     sync.Once
 	onOpenHandler       func()
 	onCloseHandler      func()
@@ -83,10 +85,11 @@ func (api *API) newDataChannel(params *DataChannelParameters, log logging.Levele
 	}
 
 	return &DataChannel{
+		statsID:           fmt.Sprintf("DataChannel-%d", time.Now().UnixNano()),
 		label:             params.Label,
 		protocol:          params.Protocol,
 		negotiated:        params.Negotiated,
-		id:                &params.ID,
+		id:                params.ID,
 		ordered:           params.Ordered,
 		maxPacketLifeTime: params.MaxPacketLifeTime,
 		maxRetransmits:    params.MaxRetransmits,
@@ -148,6 +151,15 @@ func (d *DataChannel) open(sctpTransport *SCTPTransport) error {
 		LoggerFactory:        d.api.settingEngine.LoggerFactory,
 	}
 
+	if d.id == nil {
+		generatedID, err := d.sctpTransport.generateDataChannelID(d.sctpTransport.dtlsTransport.role())
+		if err != nil {
+			return err
+		}
+
+		d.id = &generatedID
+	}
+
 	dc, err := datachannel.Dial(d.sctpTransport.association, *d.id, cfg)
 	if err != nil {
 		d.mu.Unlock()
@@ -184,20 +196,32 @@ func (d *DataChannel) Transport() *SCTPTransport {
 	return d.sctpTransport
 }
 
+// After onOpen is complete check that the user called detach
+// and provide an error message if the call was missed
+func (d *DataChannel) checkDetachAfterOpen() {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
+	if d.api.settingEngine.detach.DataChannels && !d.detachCalled {
+		d.log.Warn("webrtc.DetachDataChannels() enabled but didn't Detach, call Detach from OnOpen")
+	}
+}
+
 // OnOpen sets an event handler which is invoked when
 // the underlying data transport has been established (or re-established).
 func (d *DataChannel) OnOpen(f func()) {
 	d.mu.Lock()
-	defer d.mu.Unlock()
 	d.openHandlerOnce = sync.Once{}
 	d.onOpenHandler = f
-	if d.readyState == DataChannelStateOpen {
+	readyState := d.readyState
+	d.mu.Unlock()
+
+	if readyState == DataChannelStateOpen {
 		// If the data channel is already open, call the handler immediately.
-		go func() {
-			d.onceMutex.Lock()
-			d.openHandlerOnce.Do(d.onOpenHandler)
-			d.onceMutex.Unlock()
-		}()
+		go d.openHandlerOnce.Do(func() {
+			f()
+			d.checkDetachAfterOpen()
+		})
 	}
 }
 
@@ -207,11 +231,10 @@ func (d *DataChannel) onOpen() {
 	d.mu.RUnlock()
 
 	if hdlr != nil {
-		go func() {
-			d.onceMutex.Lock()
-			d.openHandlerOnce.Do(hdlr)
-			d.onceMutex.Unlock()
-		}()
+		go d.openHandlerOnce.Do(func() {
+			hdlr()
+			d.checkDetachAfterOpen()
+		})
 	}
 }
 
@@ -257,8 +280,8 @@ func (d *DataChannel) onMessage(msg DataChannelMessage) {
 }
 
 func (d *DataChannel) handleOpen(dc *datachannel.DataChannel) {
+	d.setReadyState(DataChannelStateOpen)
 	d.mu.Lock()
-	d.readyState = DataChannelStateOpen
 	d.dataChannel = dc
 	d.mu.Unlock()
 
@@ -295,9 +318,7 @@ func (d *DataChannel) readLoop() {
 		buffer := make([]byte, dataChannelBufferSize)
 		n, isString, err := d.dataChannel.ReadDataChannel(buffer)
 		if err != nil {
-			d.mu.Lock()
-			d.readyState = DataChannelStateClosed
-			d.mu.Unlock()
+			d.setReadyState(DataChannelStateClosed)
 			if err != io.EOF {
 				d.onError(err)
 			}
@@ -354,7 +375,7 @@ func (d *DataChannel) ensureOpen() error {
 // Before calling Detach you have to enable this behavior by calling
 // webrtc.DetachDataChannels(). Combining detached and normal data channels
 // is not supported.
-// Please reffer to the data-channels-detach example and the
+// Please refer to the data-channels-detach example and the
 // pion/datachannel documentation for the correct way to handle the
 // resulting DataChannel object.
 func (d *DataChannel) Detach() (datachannel.ReadWriteCloser, error) {
@@ -369,6 +390,8 @@ func (d *DataChannel) Detach() (datachannel.ReadWriteCloser, error) {
 		return nil, fmt.Errorf("datachannel not opened yet, try calling Detach from OnOpen")
 	}
 
+	d.detachCalled = true
+
 	return d.dataChannel, nil
 }
 
@@ -376,14 +399,18 @@ func (d *DataChannel) Detach() (datachannel.ReadWriteCloser, error) {
 // the DataChannel object was created by this peer or the remote peer.
 func (d *DataChannel) Close() error {
 	d.mu.Lock()
-	defer d.mu.Unlock()
+	isClosed := d.readyState == DataChannelStateClosed
+	haveSctpTransport := d.dataChannel != nil
+	d.mu.Unlock()
 
-	if d.readyState == DataChannelStateClosing ||
-		d.readyState == DataChannelStateClosed {
+	if isClosed {
 		return nil
 	}
 
-	d.readyState = DataChannelStateClosing
+	d.setReadyState(DataChannelStateClosing)
+	if !haveSctpTransport {
+		return nil
+	}
 
 	return d.dataChannel.Close()
 }
@@ -529,25 +556,27 @@ func (d *DataChannel) OnBufferedAmountLow(f func()) {
 func (d *DataChannel) getStatsID() string {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	return fmt.Sprintf("DataChannel-%d", *d.id)
+	return d.statsID
 }
 
 func (d *DataChannel) collectStats(collector *statsReportCollector) {
 	collector.Collecting()
-	statsID := d.getStatsID()
 
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
 	stats := DataChannelStats{
-		Timestamp:             statsTimestampNow(),
-		Type:                  StatsTypeDataChannel,
-		ID:                    statsID,
-		Label:                 d.label,
-		Protocol:              d.protocol,
-		DataChannelIdentifier: int32(*d.id),
+		Timestamp: statsTimestampNow(),
+		Type:      StatsTypeDataChannel,
+		ID:        d.statsID,
+		Label:     d.label,
+		Protocol:  d.protocol,
 		// TransportID string `json:"transportId"`
 		State: d.readyState,
+	}
+
+	if d.id != nil {
+		stats.DataChannelIdentifier = int32(*d.id)
 	}
 
 	if d.dataChannel != nil {
@@ -558,4 +587,11 @@ func (d *DataChannel) collectStats(collector *statsReportCollector) {
 	}
 
 	collector.Collect(stats.ID, stats)
+}
+
+func (d *DataChannel) setReadyState(r DataChannelState) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	d.readyState = r
 }
